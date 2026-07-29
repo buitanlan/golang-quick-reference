@@ -13,13 +13,19 @@ Pointer lưu **địa chỉ** của biến. Go có pointer nhưng **không** có
   - [3. Zero value: `nil`](#3-zero-value-nil)
   - [4. Không có pointer arithmetic](#4-không-có-pointer-arithmetic)
   - [5. `new` vs `make`](#5-new-vs-make)
-  - [6. Escape analysis (tổng quan)](#6-escape-analysis-tổng-quan)
-  - [7. Receiver: pointer vs value](#7-receiver-pointer-vs-value)
-  - [8. Slice, map, channel — “reference-like”](#8-slice-map-channel--reference-like)
-  - [9. Pointer tới pointer](#9-pointer-tới-pointer)
-  - [10. `unsafe.Pointer` (cảnh báo)](#10-unsafepointer-cảnh-báo)
-  - [11. Pitfalls thường gặp](#11-pitfalls-thường-gặp)
-  - [12. Best practices](#12-best-practices)
+  - [6. Addressability (lấy được địa chỉ hay không)](#6-addressability-lấy-được-địa-chỉ-hay-không)
+  - [7. Escape analysis](#7-escape-analysis)
+  - [8. Receiver: pointer vs value](#8-receiver-pointer-vs-value)
+  - [9. Slice, map, channel — “reference-like”](#9-slice-map-channel--reference-like)
+  - [10. Pointer vào slice và lifetime của backing array](#10-pointer-vào-slice-và-lifetime-của-backing-array)
+  - [11. Pointer tới pointer và pointer tới array](#11-pointer-tới-pointer-và-pointer-tới-array)
+  - [12. So sánh pointer](#12-so-sánh-pointer)
+  - [13. `unsafe.Pointer` (cảnh báo)](#13-unsafepointer-cảnh-báo)
+  - [14. `runtime.Pinner` và cgo (Go 1.21+)](#14-runtimepinner-và-cgo-go-121)
+  - [15. `weak.Pointer` và `runtime.AddCleanup` (Go 1.24+)](#15-weakpointer-và-runtimeaddcleanup-go-124)
+  - [16. Pitfalls thường gặp](#16-pitfalls-thường-gặp)
+  - [17. Khi nào KHÔNG dùng pointer](#17-khi-nào-không-dùng-pointer)
+  - [18. Best practices](#18-best-practices)
 
 ---
 
@@ -64,7 +70,7 @@ u := &User{Name: "An"}
 u.Name = "Bình" // tương đương (*u).Name
 ```
 
-Không lấy địa chỉ của **map element**, **function return tạm** trong một số ngữ cảnh cũ — với composite literal thì được: `&User{}`.
+Không lấy địa chỉ của **map element** hay **giá trị trả về của hàm** — nhưng composite literal thì được (mục 6):
 
 ```go
 p := &User{Name: "An"} // OK
@@ -77,7 +83,22 @@ p := &User{Name: "An"} // OK
 ```go
 var p *int
 fmt.Println(p == nil) // true
-// *p → panic: nil pointer dereference
+// *p → panic
+```
+
+Text panic thật khi deref pointer nil:
+
+```text
+panic: runtime error: invalid memory address or nil pointer dereference
+[signal SIGSEGV: segmentation violation code=... addr=0x0 pc=...]
+```
+
+Giá trị panic là một `runtime.Error` (cụ thể là `*runtime.TypeAssertionError`-họ `runtime.errorString`), nên có thể phân biệt trong `recover`:
+
+```go
+if re, ok := r.(runtime.Error); ok {
+	// bug thật sự — nên log stack và cân nhắc re-panic
+}
 ```
 
 Kiểm tra trước khi dùng:

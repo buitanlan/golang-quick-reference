@@ -1,7 +1,9 @@
 # Build constraints trong Go
 
 Build constraints (build tags) quyết định **file nào được đưa vào** lần biên dịch.  
-Dùng cho đa nền tảng (`GOOS`/`GOARCH`), tùy chọn tính năng, cgo, và file sinh mã.
+Dùng cho đa nền tảng (`GOOS`/`GOARCH`), tùy chọn tính năng, cgo, sanitizer, và file sinh mã.
+
+Tài liệu này nhắm **Go 1.26** (`go1.26.5`). Language version trong `go.mod`: [typesystem.md](typesystem.md), [packages-modules.md](packages-modules.md). Tham chiếu chính thức: `go help buildconstraint`.
 
 ---
 
@@ -11,14 +13,17 @@ Dùng cho đa nền tảng (`GOOS`/`GOARCH`), tùy chọn tính năng, cgo, và 
   - [Mục lục](#mục-lục)
   - [1. Tổng quan](#1-tổng-quan)
   - [2. Cú pháp `//go:build` (hiện đại)](#2-cú-pháp-gobuild-hiện-đại)
-  - [3. Legacy `// +build`](#3-legacy--build)
+  - [3. Legacy `// +build` (obsolete)](#3-legacy--build-obsolete)
   - [4. `GOOS` \& `GOARCH`](#4-goos--goarch)
-  - [5. Custom tags](#5-custom-tags)
+  - [5. Custom tags \& `-tags`](#5-custom-tags--tags)
   - [6. Hậu tố tên file (`_windows.go`, …)](#6-hậu-tố-tên-file-_windowsgo-)
   - [7. Tag `ignore`](#7-tag-ignore)
-  - [8. cgo \& tags liên quan](#8-cgo--tags-liên-quan)
-  - [9. `go generate` (overview)](#9-go-generate-overview)
-  - [10. Kết hợp thực tế \& checklist](#10-kết-hợp-thực-tế--checklist)
+  - [8. cgo, `race`, `msan`, `asan`, `unix`](#8-cgo-race-msan-asan-unix)
+  - [9. `go1.x` constraints vs `go` directive](#9-go1x-constraints-vs-go-directive)
+  - [10. `GOEXPERIMENT` vs `GODEBUG`](#10-goexperiment-vs-godebug)
+  - [11. Compiler / tool pragmas](#11-compiler--tool-pragmas)
+  - [12. Troubleshooting: file “biến mất”](#12-troubleshooting-file-biến-mất)
+  - [13. Kết hợp thực tế \& checklist](#13-kết-hợp-thực-tế--checklist)
 
 ---
 
@@ -27,25 +32,27 @@ Dùng cho đa nền tảng (`GOOS`/`GOARCH`), tùy chọn tính năng, cgo, và 
 Một package có thể chứa nhiều file; toolchain chọn tập file theo:
 
 1. **Build constraint** ở đầu file (`//go:build ...`).
-2. **Filename suffixes** (ví dụ `foo_windows_amd64.go`).
-3. Flag `-tags` khi `go build` / `go test`.
+2. **Filename suffixes** (ví dụ `foo_windows_amd64.go`) — implicit constraint.
+3. Flag `-tags` / `-race` / `-msan` / `-asan` và `CGO_ENABLED` khi `go build` / `go test` / `go list`.
 
 ```
 package fsutil
   path.go              # luôn (nếu không có constraint)
   path_unix.go         # unix-like
   path_windows.go      # Windows
-  path_stub.go         # //go:build !windows && !unix  (ví dụ)
+  path_stub.go         # //go:build !windows && !unix
 ```
 
-- Constraint nằm ở **phần đầu file**, trước `package`, kèm dòng trống sau đó.
+- Constraint nằm ở **phần đầu file**, trước `package`, chỉ được đứng sau blank line / comment khác; **phải** có dòng trống trước `package` (tránh lẫn package doc).
 - Áp dụng theo **từng file**, không phải theo hàm.
+- Chỉ **một** dòng `//go:build` mỗi file (nhiều dòng → lỗi).
+- Kiểm tra tập file bằng `go list -f '{{.GoFiles}}'` / `'{{.IgnoredGoFiles}}'` — mục 12.
 
 ---
 
 ## 2. Cú pháp `//go:build` (hiện đại)
 
-Từ Go 1.17+, khuyến nghị dùng `//go:build`:
+Từ Go 1.17+, dùng `//go:build` (biểu thức boolean):
 
 ```go
 //go:build linux && amd64
@@ -67,7 +74,7 @@ package notify
 package sys
 ```
 
-Toán tử biểu thức:
+Toán tử:
 
 | Toán tử | Nghĩa |
 |---|---|
@@ -76,16 +83,19 @@ Toán tử biểu thức:
 | `!` | NOT |
 | `()` | nhóm |
 
-Tags đặc biệt / phổ biến:
+Tags được thỏa trong một lần build (`go help buildconstraint`):
 
-- `GOOS` values: `windows`, `linux`, `darwin`, `js`, …
-- `GOARCH` values: `amd64`, `arm64`, `386`, `wasm`, …
-- `cgo` / `!cgo`
-- `go1.21`, `go1.22`, … (phiên bản ngôn ngữ)
-- custom: `integration`, `debug`, `pro`, …
+- `GOOS`: `windows`, `linux`, `darwin`, `js`, …
+- `GOARCH`: `amd64`, `arm64`, `386`, `wasm`, …
+- Feature arch: `amd64.v2`, `arm.7`, … (theo `GOAMD64`/`GOARM`/…)
+- `unix` — khi `GOOS` là Unix-like
+- `gc` hoặc `gccgo`
+- `cgo` — khi cgo được hỗ trợ (`CGO_ENABLED`)
+- `go1.1`, `go1.22`, `go1.26`, … — theo **toolchain** đang chạy (không có tag riêng cho beta/minor)
+- Tags thêm từ `-tags`
 
 ```go
-//go:build go1.21
+//go:build go1.22
 
 package compat
 ```
@@ -98,11 +108,11 @@ Sau dòng `//go:build` **phải** có dòng trống rồi mới tới `package`:
 package host
 ```
 
-Công cụ `gofmt` / `go fix` có thể đồng bộ với dòng `// +build` legacy.
+Convention thêm: `purego` — bản thuần Go (không ràng buộc cgo/`unsafe` theo nghĩa tag; dùng khi package có bản assembly).
 
 ---
 
-## 3. Legacy `// +build`
+## 3. Legacy `// +build` (obsolete)
 
 Trước Go 1.17:
 
@@ -138,7 +148,9 @@ Khác biệt cú pháp:
 // tương đương gần: (linux OR darwin) AND amd64
 ```
 
-Khuyến nghị hiện nay: viết `//go:build`, có thể giữ cả hai trong giai chuyển (cùng nghĩa). Từ Go 1.18+, nếu có cả hai, chúng phải **tương đương**.
+- `gofmt` vẫn có thể thêm `//go:build` tương đương khi gặp `// +build`.
+- Từ Go 1.18+, nếu có cả hai dạng, chúng phải **tương đương**.
+- Khuyến nghị: chỉ giữ `//go:build`. Analyzer `plusbuild` của `go fix` (1.26) có thể gỡ comment `// +build` obsolete.
 
 ```go
 //go:build linux && amd64
@@ -159,8 +171,6 @@ GOOS=linux   GOARCH=arm64 go build -o app.linux .
 GOOS=js      GOARCH=wasm  go build -o main.wasm .
 ```
 
-Trong code:
-
 ```go
 //go:build windows
 
@@ -177,13 +187,31 @@ package pathsep
 const Separator = '/'
 ```
 
-> Tag `unix` được toolchain định nghĩa cho nhiều hệ Unix-like (linux, darwin, freebsd, …) — hữu ích gom file chung.
+> Tag `unix` được toolchain định nghĩa cho nhiều hệ Unix-like (linux, darwin, freebsd, …).
 
-Liệt kê:
+Ánh xạ đặc biệt (`go help buildconstraint`):
+
+- `GOOS=android` cũng thỏa tag/file `linux`
+- `GOOS=illumos` cũng thỏa `solaris`
+- `GOOS=ios` cũng thỏa `darwin`
 
 ```bash
 go tool dist list
 go env GOOS GOARCH
+```
+
+Chứng minh bằng `go list` (Windows host, package demo):
+
+```bash
+# mặc định GOOS=windows
+go list -f '{{.GoFiles}}' .
+# [path.go path_windows.go]
+
+GOOS=linux go list -f '{{.GoFiles}}' .
+# [path.go path_linux.go path_unix.go]
+
+GOOS=darwin go list -f '{{.GoFiles}}' .
+# [path.go path_unix.go]
 ```
 
 `runtime.GOOS` / `runtime.GOARCH` cho nhánh **runtime** (khác build-time exclusion):
@@ -203,7 +231,7 @@ func open() {
 
 ---
 
-## 5. Custom tags
+## 5. Custom tags & `-tags`
 
 Tự định nghĩa tag tính năng:
 
@@ -217,11 +245,13 @@ func TestAgainstRealPostgres(t *testing.T) { /* ... */ }
 
 ```bash
 go test ./...                         # bỏ file integration
-go test -tags=integration ./...       # bật
-go test -tags="integration,debug" ./...
+go test -tags=integration ./...
+go test -tags=integration,debug ./...
 ```
 
-Ví dụ feature flag biên dịch:
+`-tags` nhận danh sách **phẩy**; dạng cách nhau bằng space đã deprecated nhưng vẫn được nhận (`go help build`).
+
+Feature flag biên dịch:
 
 ```go
 //go:build pro
@@ -239,15 +269,15 @@ package license
 const Edition = "community"
 ```
 
-- Đặt tên tag ngắn, hạ chữ, không trùng `GOOS`/`GOARCH`.
-- Document rõ trong README dự án (user bảo không tạo README ở đây — chỉ nhắc convention).
+- Đặt tên tag ngắn, hạ chữ, không trùng `GOOS`/`GOARCH`/`unix`/`cgo`/`race`/…
+- Document rõ trong README dự án; CI matrix với `-tags=...`.
 - Tránh lạm dụng: quá nhiều tổ hợp tag → ma trận build phức tạp.
 
 ---
 
 ## 6. Hậu tố tên file (`_windows.go`, …)
 
-Ngoài comment, tên file cũng mang constraint:
+Ngoài comment, tên file mang constraint ngầm. Sau khi bỏ extension và hậu tố `_test` tùy chọn, nếu khớp:
 
 | Pattern | Nghĩa |
 |---|---|
@@ -263,7 +293,6 @@ conn.go
 conn_windows.go
 conn_linux.go
 conn_darwin_arm64.go
-endian_little.go      # nếu dùng tag custom + go:build
 ```
 
 ```go
@@ -271,7 +300,6 @@ endian_little.go      # nếu dùng tag custom + go:build
 package sys
 
 func Hostname() (string, error) {
-	// Windows API
 	return windowsHostname()
 }
 ```
@@ -289,11 +317,10 @@ func Hostname() (string, error) {
 
 Lưu ý:
 
-- Suffix `GOOS`/`GOARCH` là **ngầm**; không cần lặp `//go:build windows` nếu đã tên `_windows.go` (có thể vẫn ghi cho rõ).
+- Suffix `GOOS`/`GOARCH` là **ngầm**; không bắt buộc lặp `//go:build windows` trên `_windows.go` (có thể ghi thêm cho rõ).
 - File `foo_windows_test.go` = test + windows.
-- Tránh tên kiểu `my_linux_helper.go` nếu `linux` không phải ý OS — vì toolchain có thể diễn giải nhầm. Đặt `_linux.go` đúng chuẩn, hoặc tránh từ khóa OS giữa tên.
-
-Các từ bị nhận diện đặc biệt ở cuối tên (trước `.go`): danh sách `GOOS`/`GOARCH` của Go. Ví dụ `foo_bar.go` — `bar` không phải OS thì vẫn OK.
+- Tránh tên kiểu `my_linux_helper.go` nếu `linux` không phải ý OS — toolchain diễn giải nhầm suffix. Đặt `_linux.go` đúng chuẩn, hoặc tránh từ khóa OS ở cuối stem.
+- Chỉ các giá trị `GOOS`/`GOARCH` **đã biết** của Go mới kích hoạt rule; `foo_bar.go` với `bar` không phải OS/ARCH thì vẫn luôn được xét (trừ constraint khác).
 
 ---
 
@@ -307,8 +334,8 @@ package main
 // file tiện ích chạy tay / template cho go generate
 ```
 
-- `ignore` → file **không bao giờ** thuộc package khi `go build` thông thường.
-- Hay dùng với file `go generate` standalone:
+- `ignore` → file **không bao giờ** thuộc package khi `go build` thông thường (mọi từ không thỏa khác cũng được, nhưng `ignore` là convention — `go help buildconstraint`).
+- Hay dùng với file generator standalone:
 
 ```go
 //go:build ignore
@@ -321,19 +348,22 @@ import (
 )
 
 func main() {
-	// sinh mã...
 	_ = template.New("x")
 	_ = os.Args
 }
 ```
 
 ```bash
-go run generare.go   # vẫn chạy được tường minh
+go run generate.go   # vẫn chạy được khi chỉ định file tường minh
 ```
+
+Khác `ignore` trong `go.mod` (1.25+): directive module bỏ **thư mục** khỏi pattern `./...` — [packages-modules.md](packages-modules.md).
 
 ---
 
-## 8. cgo & tags liên quan
+## 8. cgo, `race`, `msan`, `asan`, `unix`
+
+### cgo
 
 File dùng cgo thường import `"C"`:
 
@@ -346,8 +376,6 @@ package zstd
 */
 import "C"
 ```
-
-Tags:
 
 ```go
 //go:build cgo
@@ -368,15 +396,100 @@ CGO_ENABLED=0 go build .     # không cgo; file //go:build cgo bị loại
 CGO_ENABLED=1 go build .
 ```
 
-- Cross-compile với cgo khó hơn (cần cross C toolchain).
-- Nhiều thư viện cung cấp cả bản `cgo` và `!cgo`.
-- Tag `cgo` được set khi `CGO_ENABLED=1` và toolchain hỗ trợ.
+- Tag `cgo` thỏa khi cgo được hỗ trợ (`CGO_ENABLED`, xem `go help environment`).
+- Cross-compile với cgo cần cross C toolchain.
+- `go list` tách `CgoFiles` (import `"C"`) khỏi `GoFiles`.
+
+### `race` / `msan` / `asan`
+
+Flag build (`go help build`):
+
+| Flag | Mục đích | Tag thường dùng với `//go:build` |
+|---|---|---|
+| `-race` | race detector | `race` |
+| `-msan` | MemorySanitizer | `msan` |
+| `-asan` | AddressSanitizer | `asan` |
+
+```go
+//go:build race
+
+package p
+
+func RaceOnly() {}
+```
+
+```bash
+go list -f '{{.GoFiles}}' .
+# race.go nằm trong IgnoredGoFiles
+
+go list -tags=race -f '{{.GoFiles}}' .
+# [...] race.go ...]
+```
+
+- `-race` / `-msan` / `-asan` có hạn chế OS/ARCH (xem `go help build`); trên Windows, `-race` yêu cầu cgo (`CGO_ENABLED=1`).
+- Install suffix tự thêm `_race` / tương tự khi dùng các flag này.
+
+### `unix`
+
+Gom file chung cho Linux/macOS/BSD thay vì OR dài các `GOOS` — mục 4.
 
 ---
 
-## 9. `go generate` (overview)
+## 9. `go1.x` constraints vs `go` directive
 
-`go generate` quét directive trong source và chạy lệnh — **không** phải build constraint, nhưng thường đi cùng file `ignore` / codegen:
+Hai cơ chế khác nhau:
+
+| Cơ chế | Điều khiển |
+|---|---|
+| `go` trong `go.mod` / `go.work` | Language version mặc định của module/workspace — [typesystem.md](typesystem.md) |
+| `//go:build go1.x` | (1) File chỉ vào build nếu toolchain thỏa tag `go1.x`; (2) với module `go 1.21+`, language version **của file đó** nâng lên tối thiểu theo constraint |
+
+```go
+//go:build go1.26
+
+package p
+
+// file này dùng cú pháp/API cần language ≥ 1.26
+```
+
+Ví dụ thực tế (`go 1.22` trong `go.mod`, toolchain `go1.26.5`, host Windows):
+
+```bash
+go list -f 'GoFiles={{.GoFiles}} Ignored={{.IgnoredGoFiles}}' .
+# GoFiles=[base.go newfeat.go] Ignored=[nowin.go]
+# newfeat.go có //go:build go1.26 → vẫn được chọn vì toolchain ≥ 1.26
+# language version khi compile newfeat.go được nâng theo constraint
+```
+
+- Tag `go1.x` **không** bị “tắt” chỉ vì dòng `go` trong `go.mod` thấp hơn — miễn toolchain đang chạy thỏa `go1.x`.
+- Modernizer `go fix` (1.26) cũng chỉ đề xuất fix tính năng mới trên file đã yêu cầu đủ version — [packages-modules.md](packages-modules.md) §16.
+- Không có tag riêng cho patch (`go1.26.5`); chỉ major.minor dạng `go1.26`.
+
+---
+
+## 10. `GOEXPERIMENT` vs `GODEBUG`
+
+| | `GOEXPERIMENT` | `GODEBUG` |
+|---|---|---|
+| Khi nào | **Build-time** (toolchain experiments) | **Run-time** (và mặc định compile vào binary) |
+| Ổn định | Không — list đổi tùy release; dành cho phát triển toolchain | Cơ chế tương thích chính thức |
+| Set bằng | env `GOEXPERIMENT=...` lúc build | env `GODEBUG`, `godebug` trong `go.mod`/`go.work`, `//go:debug` |
+| `go env -w` | Không khuyến khích dùng cho production | `GODEBUG` **không** set được bằng `go env -w` |
+
+```bash
+# ví dụ experiment (tên cụ thể xem GOROOT/src/internal/goexperiment/flags.go)
+GOEXPERIMENT=greenteagc go build .
+```
+
+Chi tiết `godebug` / `//go:debug`: [packages-modules.md](packages-modules.md) §13 và `GOROOT/doc/godebug.md`.
+
+---
+
+## 11. Compiler / tool pragmas
+
+Không phải build constraint, nhưng cùng họ comment `//go:...` — hay đi kèm file `ignore` / codegen.
+
+### `//go:generate`
 
 ```go
 package api
@@ -385,70 +498,130 @@ package api
 //go:generate go run ../tools/gen_openapi.go
 
 type Status int
-
-const (
-	StatusOK Status = iota
-	StatusFail
-)
 ```
 
 ```bash
 go generate ./...
-go generate ./internal/api
 ```
 
-Đặc điểm:
+- Không chạy tự động khi `go build` — phải gọi tường minh.
+- Directive phải đầu dòng (chỉ whitespace trước; không space trong `//go`).
+- Biến: `$GOFILE`, `$GOPACKAGE`, `$GOLINE`, `$GOOS`, `$GOARCH`, `$GOROOT`, `$DOLLAR`, `$PATH`.
+- Pin tool: `go tool stringer` (sau khi khai báo `tool` trong `go.mod`) hoặc `go run example.com/tool@v1.2.3`.
 
-- Chạy trên máy dev/CI; cần tool có trên `PATH` (hoặc `go run`).
-- Không chạy tự động khi `go build` — phải gọi tường minh (hoặc script CI).
-- Comment `//go:generate` phải đầu dòng (chỉ whitespace trước).
-- Biến môi trường hữu ích: `$GOFILE`, `$GOPACKAGE`, `$GOARCH`, `$GOOS`, `$GOLINE`.
+### `//go:embed`
 
 ```go
-//go:generate echo generating $GOFILE in package $GOPACKAGE
+import "embed"
+
+//go:embed hello.txt
+var f embed.FS
 ```
 
-Best practice:
+- Cần import `"embed"` (hoặc `_ "embed"` với `string`/`[]byte`).
+- Pattern `path.Match`; file nằm trong cây package. Chi tiết: `go doc embed`.
 
-- Commit code đã generate **hoặc** generate trong CI có verify `git diff --exit-code`.
-- File generator: `//go:build ignore` để không lẫn vào package.
-- Giữ lệnh generate tái lập được (pinned module tool qua `go run example.com/tool@v1.2.3`).
+### `//go:noinline`
+
+```go
+//go:noinline
+func hotspot() { /* ... */ }
+```
+
+- Cấm inline call tới func — chủ yếu debug compiler / runtime đặc thù (`go doc cmd/compile`).
+
+### `//go:linkname` (siết từ Go 1.23)
+
+```go
+import _ "unsafe"
+
+//go:linkname localname [importpath.name]
+```
+
+- Cho phép hai symbol Go alias cùng object-file symbol; phá encapsulation — **chỉ** bật trong file đã import `"unsafe"`.
+- Từ **Go 1.23**: linker mặc định `-checklinkname=1` — không cho “pull” symbol nội bộ của **standard library** trừ khi phía định nghĩa đã có `//go:linkname` (hoặc thuộc allowlist tương thích). Tắt kiểm tra (debug): `-ldflags=-checklinkname=0`.
+- Không dùng trong application code thông thường.
+
+### `//go:fix inline` (Go 1.26)
+
+```go
+// Deprecated: prefer Pow(x, 2).
+//go:fix inline
+func Square(x int) int { return Pow(x, 2) }
+```
+
+- Đánh dấu func/const để analyzer `inline` của `go fix` thay call site bằng body — migration API.
+- Áp dụng: `go fix -inline ./...` hoặc `go fix ./...`.
+- Xem `go tool fix help inline` và [packages-modules.md](packages-modules.md) §16.
 
 ---
 
-## 10. Kết hợp thực tế & checklist
+## 12. Troubleshooting: file “biến mất”
+
+Khi symbol “thiếu” lúc build nhưng file vẫn nằm trên đĩa — thường do **silent exclusion**. Kiểm tra:
+
+```bash
+go list -f '{{.GoFiles}}' ./pkg
+go list -f '{{.IgnoredGoFiles}}' ./pkg
+go list -f '{{.CgoFiles}}' ./pkg
+
+GOOS=linux go list -f '{{.GoFiles}}' ./pkg
+go list -tags=integration -f '{{.GoFiles}}' ./pkg
+```
+
+Output thực tế (demo, host `windows/amd64`):
+
+```text
+# mặc định
+GoFiles: [path.go path_windows.go]
+IgnoredGoFiles: [gen.go integ.go path_linux.go path_unix.go race.go]
+# gen.go có //go:build ignore; integ.go cần -tags=integration; …
+
+# GOOS=linux
+GoFiles: [path.go path_linux.go path_unix.go]
+
+# -tags=integration
+GoFiles: [integ.go path.go path_windows.go]
+```
+
+Checklist nhanh:
+
+1. Sai `GOOS`/`GOARCH` hoặc thiếu `-tags=...`.
+2. Filename suffix OS/ARCH ngoài ý muốn.
+3. `//go:build ignore` / `!cgo` với `CGO_ENABLED=0`.
+4. Thiếu dòng trống sau `//go:build` → constraint có thể bị parse sai / lẫn doc.
+5. Nhầm package (`package foo_test`) hoặc file trong `testdata` / `_` / `.`.
+6. Module `ignore` (1.25) loại cả thư mục khỏi `./...` — khác tag file.
+
+---
+
+## 13. Kết hợp thực tế & checklist
 
 Pattern đa nền tảng:
 
 ```
 pkg/
   file.go           # API chung
-  file_stub.go      //go:build !(windows || unix)
+  file_stub.go      # //go:build !(windows || unix)
   file_windows.go
   file_unix.go
 ```
 
 Pattern optional driver:
 
-```
+```go
 //go:build sqlite && cgo
 ```
 
 Checklist:
 
-1. Ưu tiên `//go:build` biểu thức rõ ràng.
+1. Ưu tiên `//go:build` biểu thức rõ ràng; gỡ `// +build` legacy khi có thể.
 2. Đặt dòng trống trước `package`.
 3. Dùng filename suffix cho OS/Arch thay vì copy logic runtime nếu có thể.
 4. Custom tags: document + CI matrix (`-tags=...`).
-5. `ignore` cho file one-off / generator.
-6. Kiểm tra bằng:
-
-```bash
-go list -f '{{.GoFiles}}' ./pkg
-GOOS=windows go list -f '{{.GoFiles}}' ./pkg
-go test -tags=integration ./...
-```
-
-7. Đừng nhầm **build-time** exclusion với `if runtime.GOOS` — chọn đúng công cụ.
+5. `ignore` (tag) cho file one-off / generator; `ignore` (go.mod) cho thư mục non-Go trong-tree.
+6. Phân biệt `go1.x` (toolchain + optional lang bump) với dòng `go` trong `go.mod`.
+7. Đừng nhầm **build-time** exclusion với `if runtime.GOOS`.
+8. Xác minh bằng `go list` trước khi đoán — mục 12.
 
 ---

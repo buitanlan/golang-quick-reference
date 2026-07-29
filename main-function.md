@@ -1,6 +1,6 @@
 # Hàm main trong Go
 
-Chương trình Go executable bắt đầu từ `package main` và hàm `func main()`.  
+Chương trình Go executable bắt đầu từ `package main` và hàm `func main()`.
 Khác C#/Java, Go **không** nhận `args` qua tham số `main` — dùng `os.Args` hoặc package `flag`.
 
 ---
@@ -17,7 +17,10 @@ Khác C#/Java, Go **không** nhận `args` qua tham số `main` — dùng `os.Ar
   - [6. Thứ tự `init` trước `main`](#6-thứ-tự-init-trước-main)
   - [7. Nhiều `main` packages (nhiều thư mục)](#7-nhiều-main-packages-nhiều-thư-mục)
   - [8. Build \& chạy](#8-build--chạy)
-  - [9. Best practices](#9-best-practices)
+  - [9. `GOMAXPROCS` \& container (Go 1.25+)](#9-gomaxprocs--container-go-125)
+  - [10. Signal \& graceful shutdown](#10-signal--graceful-shutdown)
+  - [11. `TestMain`](#11-testmain)
+  - [12. Best practices](#12-best-practices)
 
 ---
 
@@ -48,6 +51,7 @@ func main() int {
 
 - `main` có thể gọi hàm khác, spawn goroutine, lắng nghe signal, v.v.
 - Khi `main` return bình thường → process thoát với code **0** (trừ khi đã `os.Exit` trước đó).
+- Goroutine còn lại khi `main` return **không** được join — process kết thúc ngay.
 
 ---
 
@@ -75,7 +79,7 @@ func main() {
 }
 ```
 
-> **Lưu ý**: return từ `main` **không** chạy `defer` đã đăng ký *sau* khi `os.Exit` được gọi — vì `os.Exit` thoát ngay. Nhưng `defer` trong `main` **có** chạy khi `main` return bình thường.
+> **Lưu ý**: `defer` trong `main` **có** chạy khi `main` return bình thường. `os.Exit` thoát ngay — **không** chạy `defer` nào còn pending (kể cả trong `main`).
 
 ```go
 func main() {
@@ -131,8 +135,8 @@ import (
 
 func main() {
 	var (
-		host = flag.String("host", "127.0.0.1", "listen host")
-		port = flag.Int("port", 8080, "listen port")
+		host    = flag.String("host", "127.0.0.1", "listen host")
+		port    = flag.Int("port", 8080, "listen port")
 		verbose = flag.Bool("v", false, "verbose logging")
 	)
 	flag.Parse()
@@ -267,6 +271,8 @@ Quy tắc (tóm tắt):
 - Tránh đọc config mạng trong `init` — lỗi khó báo, khó test.
 - Không phụ thuộc thứ tự `init` giữa các file nếu có thể; gom rõ ràng vào một chỗ.
 
+Chi tiết hơn: [packages-modules.md §9](packages-modules.md#9-init--thứ-tự-khởi-tạo).
+
 ---
 
 ## 7. Nhiều `main` packages (nhiều thư mục)
@@ -323,14 +329,16 @@ go install ./cmd/api        # vào $GOBIN / $GOPATH/bin
 
 Biến môi trường hữu ích:
 
-- `CGO_ENABLED=0` — static-ish build không cgo.
+- `CGO_ENABLED=0` — build không cgo (dễ binary portable hơn).
 - `GOOS`/`GOARCH` — cross-compile:
 
 ```bash
 GOOS=linux GOARCH=amd64 go build -o api.linux ./cmd/api
 ```
 
-Version embedding (thực tế phổ biến):
+### `-ldflags -X` — embed version
+
+`go tool link` hỗ trợ `-X importpath.name=value` để gán biến `string` đã khai báo (uninitialized hoặc const string):
 
 ```bash
 go build -ldflags="-X main.version=1.2.3" ./cmd/api
@@ -346,16 +354,133 @@ func main() {
 }
 ```
 
+- Chỉ hiệu lực với biến `string` ở package-level đúng `importpath.name`.
+- Không hoạt động nếu initializer gọi hàm hoặc tham chiếu biến khác.
+
+### Build constraints
+
+File chỉ build trên một OS/arch/tag dùng `//go:build` — xem [build-constraints.md](build-constraints.md). Language version của file cũng có thể gắn `//go:build go1.22` (độc lập toolchain).
+
+### `tool` directive (Go 1.24+)
+
+`go.mod` có thể khai báo tool (linter, generator) tách khỏi dependency runtime:
+
+```bash
+go get -tool golang.org/x/tools/cmd/stringer@latest
+go tool stringer -type=Day
+```
+
+- `go get -tool path@version` thêm dòng `tool` vào `go.mod`.
+- Chạy bằng `go tool <name> …` — version pin theo module, không phụ thuộc `$PATH` máy dev.
+
+### `go fix` — modernizers (Go 1.26)
+
+Từ 1.26, `go fix` được viết lại trên analysis framework (cùng nền `go vet`) và là nơi chứa **modernizers**:
+
+```bash
+go fix ./...
+go fix -diff ./...          # chỉ xem patch
+go tool fix help            # danh sách analyzer
+go tool fix help newexpr    # chi tiết một fixer
+```
+
+Ví dụ modernizer liên quan entry/codebase: `newexpr`, `rangeint`, `forvar`, `minmax`, `waitgroup`, `any`, `testingcontext`… Không đổi hành vi có chủ đích — nếu sai, báo issue. Xem thêm [keywords.md](keywords.md).
+
 ---
 
-## 9. Best practices
+## 9. `GOMAXPROCS` & container (Go 1.25+)
 
-- Giữ `main` mỏng: parse flag → wire dependencies → `run(ctx)` → xử lý lỗi/exit.
-- Dùng `context.Context` từ `main` (signal: `signal.NotifyContext`) để shutdown sạch.
+`GOMAXPROCS` = số P (logical processor) — số goroutine chạy CPU **đồng thời**. Default từ Go **1.25** (khi language version ≥ 1.25):
+
+- Nếu env `GOMAXPROCS` là số nguyên dương → dùng giá trị đó (và **tắt** auto-update).
+- Không thì runtime chọn min hợp lý từ: số logical CPU, CPU affinity, và trên Linux **cgroup CPU quota** (CPU limit).
+- Runtime **định kỳ cập nhật** default khi CPU/affinity/cgroup đổi (tới ~1 lần/giây). Gọi `runtime.GOMAXPROCS(n)` cũng tắt auto-update.
+- `runtime.SetDefaultGOMAXPROCS()` (1.25+) khôi phục default + auto-update.
+- `GODEBUG=containermaxprocs=0` / `updatemaxprocs=0` giữ hành vi cũ; đó là default cho language version ≤ 1.24.
+
+```go
+runtime.GOMAXPROCS(0) // đọc giá trị hiện tại, không đổi
+```
+
+Ý nghĩa thực tế: container limit 2 CPU trên host 64 core → process Go 1.25+ thường chạy với ~2 P thay vì 64 — giảm throttling. Chi tiết scheduler: [concurrency.md §13](concurrency.md#13-scheduler-gomaxprocs--metrics).
+
+---
+
+## 10. Signal & graceful shutdown
+
+Pattern chuẩn từ `main`:
+
+```go
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"os/signal"
+)
+
+func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	if err := run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func run(ctx context.Context) error {
+	<-ctx.Done()
+	// Go 1.26+: Cause mô tả signal, ví dụ "interrupt signal received"
+	fmt.Fprintln(os.Stderr, "shutdown:", context.Cause(ctx))
+	return ctx.Err()
+}
+```
+
+- `NotifyContext` (1.16+): Done khi nhận signal, khi `stop()`, hoặc parent hủy — cái nào trước.
+- Gọi `stop()` sớm để **unregister** và trả lại default signal behavior (ví dụ Interrupt → exit).
+- Go **1.26**: hủy do signal dùng `CancelCauseFunc`; `context.Cause(ctx)` là lỗi mô tả signal. `errors.Is(cause, context.Canceled) == true`. Gọi `stop()` → cause thường `Canceled`.
+- Trên Unix thường thêm `syscall.SIGTERM`. Windows: `os.Interrupt` (Ctrl+C) là phổ biến.
+- Kết hợp `http.Server.Shutdown(ctx)` / đóng listener — xem [context.md](context.md).
+
+---
+
+## 11. `TestMain`
+
+Package test có thể định nghĩa entry riêng:
+
+```go
+func TestMain(m *testing.M) {
+	// setup — flag.Parse() nếu TestMain tự đọc flag
+	code := m.Run()
+	// teardown
+	os.Exit(code)
+}
+```
+
+Theo `go doc testing`:
+
+- Nếu có `TestMain`, test binary gọi nó thay vì chạy test trực tiếp.
+- `m.Run()` chạy tests/benchmarks; trả về exit code — thường `os.Exit(code)`. Nếu `TestMain` return mà không `Exit`, wrapper vẫn `os.Exit` với kết quả `m.Run` (chỉ khi đã gọi `Run`).
+- Khi `TestMain` bắt đầu, **`flag.Parse` chưa chạy** — gọi tường minh nếu cần flag của `testing` hoặc flag riêng.
+- Dùng cho setup global (testcontainer, synctest shard, seed DB) — không cần cho test thường.
+
+`testing.M` / `m.Run` là primitive thấp; phần lớn suite không cần `TestMain`.
+
+---
+
+## 12. Best practices
+
+- Giữ `main` mỏng: parse flag → wire dependencies → `run(ctx)` → map lỗi/exit.
+- Dùng `signal.NotifyContext` + `defer stop()`; từ 1.26 đọc `context.Cause` nếu cần biết signal.
 - Log lỗi ra `stderr`; output dữ liệu ra `stdout` (friendly với pipe).
 - Tránh `panic` cho lỗi thường gặp; `panic` chỉ cho invariant vỡ thật sự.
 - Nhiều binary → cấu trúc `cmd/`; chia sẻ code qua `internal`.
-- Nhớ: `os.Exit` bỏ qua `defer` — thiết kế đường thoát có chủ đích.
+- Nhớ: `os.Exit` bỏ qua `defer` — thiết kế đường thoát có chủ đích (`realMain() int`).
+- Pin tool bằng `tool` trong `go.mod` (1.24+); hiện đại hóa codebase bằng `go fix` (1.26).
+- Container: language version ≥ 1.25 để hưởng default `GOMAXPROCS` theo cgroup.
 
 ```go
 package main
@@ -383,4 +508,22 @@ func run(ctx context.Context) error {
 }
 ```
 
----
+### Version map
+
+| Phiên bản | Liên quan `main` / process |
+|---|---|
+| 1.16 | `signal.NotifyContext` |
+| 1.24 | `tool` directive trong `go.mod`; `go get -tool` |
+| 1.25 | default `GOMAXPROCS` theo cgroup + auto-update; `SetDefaultGOMAXPROCS` |
+| 1.26 | `NotifyContext` gắn Cause theo signal; `go fix` = modernizers (`newexpr`, …) |
+
+### Checklist
+
+```text
+□ package main + func main() không tham số/return
+□ main mỏng; defer cleanup trước os.Exit (hoặc realMain pattern)
+□ NotifyContext + defer stop(); Cause (1.26) nếu cần phân biệt signal
+□ -ldflags -X chỉ gắn string package-level hợp lệ
+□ //go:build xem build-constraints.md; tool pin trong go.mod khi cần
+□ go.mod go 1.25+ nếu muốn GOMAXPROCS theo container
+```

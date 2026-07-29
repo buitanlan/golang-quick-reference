@@ -1,10 +1,10 @@
 # Tài liệu tham khảo ngôn ngữ lập trình Go
 
-Bộ tài liệu này được thiết kế như một dạng tài liệu tham khảo, giúp các bạn nắm được tất cả những khái niệm và thành phần của Go. Vì ở dạng tham khảo nên sẽ có một số khó khăn và không phù hợp với người học từ đầu, nếu chưa biết gì về Go, bạn nên tìm một giáo trình đơn giản hơn (xem bên dưới) và dùng tài liệu này để tham khảo kỹ hơn trong quá trình học.
+Bộ tài liệu tham chiếu **in-depth / advanced** cho ngôn ngữ Go, nhắm **Go 1.26**. Không phải giáo trình nhập môn: các khái niệm được trình bày dạng tham khảo nhanh kèm chi tiết nâng cao (semantics, version gates, pitfalls). Nếu chưa biết Go, bắt đầu bằng Tour of Go / Effective Go bên dưới, rồi dùng bộ này khi cần tra cứu sâu hơn.
 
 ---
 
-Tham khảo tài liệu chính thức nếu bạn chưa biết về Go: [A Tour of Go](https://go.dev/tour/) · [Effective Go](https://go.dev/doc/effective_go)
+Tham khảo chính thức: [A Tour of Go](https://go.dev/tour/) · [Effective Go](https://go.dev/doc/effective_go) · [Release notes](https://go.dev/doc/devel/release)
 
 ---
 
