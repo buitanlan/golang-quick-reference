@@ -734,6 +734,7 @@ Danh sách kiểm tra ngắn, xếp theo tần suất gặp thực tế:
 | 1.24    | `strings.Lines`/`SplitSeq`/`FieldsSeq`, `bytes.Lines` để `range` trực tiếp |
 | 1.25    | không có thay đổi ngôn ngữ; `(*sync.WaitGroup).Go`; `testing/synctest` chính thức để test code có `select`/timer |
 | 1.26    | `new(expr)`; `go fix` thành nơi chứa modernizer (`rangeint`, `forvar`, `minmax`, `waitgroup`, `stringsbuilder`…) |
+| 1.27    | generic method (không phải statement, nhưng ảnh hưởng `func` method); `go test` mặc định vet `stdversion`; modernizer `atomictypes` / `embedlit` / `slicesbackward` / `unsafefuncs`; analyzer `waitgroup` → `waitgroupgo` |
 
 Chạy `go tool fix help` để xem toàn bộ modernizer, `go fix -diff ./...` để xem patch trước khi áp dụng.
 

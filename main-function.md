@@ -384,7 +384,9 @@ go tool fix help            # danh sách analyzer
 go tool fix help newexpr    # chi tiết một fixer
 ```
 
-Ví dụ modernizer liên quan entry/codebase: `newexpr`, `rangeint`, `forvar`, `minmax`, `waitgroup`, `any`, `testingcontext`… Không đổi hành vi có chủ đích — nếu sai, báo issue. Xem thêm [keywords.md](keywords.md).
+Ví dụ modernizer liên quan entry/codebase: `newexpr`, `rangeint`, `forvar`, `minmax`, `waitgroup`/`waitgroupgo` (1.27), `any`, `testingcontext`… Không đổi hành vi có chủ đích — nếu sai, báo issue. Xem thêm [keywords.md](keywords.md).
+
+**Go 1.27:** `go test` chạy vet check **`stdversion` theo mặc định** — báo symbol stdlib mới hơn language version của file (`go` trong `go.mod` / `//go:build go1.x`). `go doc pkg@version` và `go doc -ex` in example.
 
 ---
 

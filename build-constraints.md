@@ -3,7 +3,7 @@
 Build constraints (build tags) quyết định **file nào được đưa vào** lần biên dịch.  
 Dùng cho đa nền tảng (`GOOS`/`GOARCH`), tùy chọn tính năng, cgo, sanitizer, và file sinh mã.
 
-Tài liệu này nhắm **Go 1.26** (`go1.26.5`). Language version trong `go.mod`: [typesystem.md](typesystem.md), [packages-modules.md](packages-modules.md). Tham chiếu chính thức: `go help buildconstraint`.
+Tài liệu này nhắm **Go 1.27**. Language version trong `go.mod`: [typesystem.md](typesystem.md), [packages-modules.md](packages-modules.md). Tham chiếu chính thức: `go help buildconstraint`.
 
 ---
 
@@ -479,6 +479,7 @@ go list -f 'GoFiles={{.GoFiles}} Ignored={{.IgnoredGoFiles}}' .
 ```bash
 # ví dụ experiment (tên cụ thể xem GOROOT/src/internal/goexperiment/flags.go)
 GOEXPERIMENT=greenteagc go build .
+# Go 1.27: nosizespecializedmalloc, nojsonv2 (khôi phục json v1), simd
 ```
 
 Chi tiết `godebug` / `//go:debug`: [packages-modules.md](packages-modules.md) §13 và `GOROOT/doc/godebug.md`.

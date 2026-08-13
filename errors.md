@@ -1006,3 +1006,4 @@ Ghi chú thêm:
 | 1.20    | `errors.Join`, nhiều `%w` trong một `fmt.Errorf`, `Unwrap() []error` |
 | 1.21    | `errors.ErrUnsupported`, `panic(nil)` → `*runtime.PanicNilError`, `log/slog` |
 | 1.26    | `errors.AsType[E]`, `fmt.Errorf` không format cấp phát ngang `errors.New`, `slog.NewMultiHandler` |
+| 1.27    | không đổi API `errors`; `go test` mặc định `stdversion` bắt symbol stdlib mới hơn `go` directive |

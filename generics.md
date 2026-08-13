@@ -2,7 +2,7 @@
 
 Generics (type parameters) từ **Go 1.18** cho phép viết hàm/kiểu tham số hóa kiểu mà vẫn type-safe lúc biên dịch. Dùng đúng chỗ giảm trùng lặp; lạm dụng làm API khó đọc.
 
-Tài liệu nhắm tới **Go 1.26**. Type system / alias / comparable: [typesystem.md](typesystem.md). Method set: [methods-interfaces.md](methods-interfaces.md).
+Tài liệu nhắm tới **Go 1.27**. Type system / alias / comparable: [typesystem.md](typesystem.md). Method set: [methods-interfaces.md](methods-interfaces.md).
 
 ---
 
@@ -19,6 +19,7 @@ Tài liệu nhắm tới **Go 1.26**. Type system / alias / comparable: [typesys
   - [7. Generic functions](#7-generic-functions)
   - [8. Generic types \& type aliases](#8-generic-types--type-aliases)
   - [9. Method \& giới hạn](#9-method--giới-hạn)
+    - [9.1 Generic method (Go 1.27+)](#91-generic-method-go-127)
   - [10. Type inference](#10-type-inference)
   - [11. Self-referential constraints (Go 1.26+)](#11-self-referential-constraints-go-126)
   - [12. Stdlib generic hữu ích](#12-stdlib-generic-hữu-ích)
@@ -49,7 +50,7 @@ func Min[T cmp.Ordered](a, b T) T {
 - Tham số kiểu trong `[...]` trước danh sách tham số giá trị.
 - Constraint giới hạn type set cho phép toán tử / method.
 - Instantiation: `Min[int](1, 2)` hoặc suy luận `Min(1, 2)`.
-- Go **1.25** không thêm cú pháp ngôn ngữ mới; spec bỏ khái niệm “core type” (mục 6). Go **1.26** thêm constraint tự tham chiếu (mục 11).
+- Go **1.25** không thêm cú pháp ngôn ngữ mới; spec bỏ khái niệm “core type” (mục 6). Go **1.26** thêm constraint tự tham chiếu (mục 11). Go **1.27** cho phép generic method và suy luận hàm generic khi gán vào kiểu hàm (mục 9–10).
 
 ---
 
@@ -348,37 +349,60 @@ var l List[int] = []int{1}
 
 ## 9. Method & giới hạn
 
-**Được:** method trên generic type dùng type params của type:
+**Được (mọi phiên bản 1.18+):** method trên generic type dùng type params **của type**:
 
 ```go
 func (s *Stack[T]) Len() int { return len(s.items) }
 ```
 
-**Không được:** thêm type parameter mới trên method:
+### 9.1 Generic method (Go 1.27+)
+
+Method được phép khai báo **type parameter riêng**, độc lập với type params của receiver:
 
 ```go
-// Illegal — lỗi: method must have no type parameters
-// func (s *Stack[T]) Convert[U any]() Stack[U]
-```
-
-Workaround: hàm package-level:
-
-```go
-func Convert[T any, U any](s Stack[T], f func(T) U) Stack[U] {
+func (s Stack[T]) Convert[U any](f func(T) U) Stack[U] {
 	var out Stack[U]
 	for _, v := range s.items {
 		out.Push(f(v))
 	}
 	return out
 }
+
+st := Stack[int]{}
+st.Push(1)
+ss := st.Convert(strconv.Itoa) // U = string suy từ f
 ```
 
-Giới hạn khác:
+Trên toolchain cũ hơn (`go` directive / `-lang` < 1.27):
 
-- Không generic trên method của non-generic type.
-- Specialization kiểu C++ không có — một implementation cho mọi T (compiler có thể instantiate/shape riêng, nhưng không viết overload theo T).
+```text
+method must have no type parameters
+```
+
+Workaround trước 1.27 (vẫn hợp lệ): hàm package-level `func Convert[T, U any](s Stack[T], f func(T) U) Stack[U]`.
+
+**Hai giới hạn còn lại (1.27 không nới):**
+
+1. Method của **interface** không được có type parameter.
+2. Generic method **không** implement method của interface — interface method phải có chữ ký không type-param, một implementation cho mọi instantiation.
+
+```go
+type Mapper interface {
+	// Map[U any](f func(any) U) any // LỖI: interface method không generic
+	Len() int                         // OK — Stack[T].Len implement được
+}
+
+// Convert[U] không xuất hiện trong method set dùng cho interface
+var _ Mapper = Stack[int]{} // OK nhờ Len(); không nhờ Convert
+```
+
+Giới hạn khác (không đổi):
+
+- Specialization kiểu C++ không có — một thân cho mọi T (shape/dictionary).
 - Reflection vẫn động; generics là compile-time.
 - Type switch trực tiếp trên type parameter không được — cast qua `any` — [typesystem.md](typesystem.md) §8.
+
+Stdlib 1.27 dùng generic method: `math/rand/v2.Rand.N` (cùng semantics với hàm package-level `rand.N`).
 
 ---
 
@@ -393,6 +417,18 @@ Stack[int]{}        // type cần chỉ rõ khi không có đối số suy ra
 - Inference từ argument; return type ít khi đủ một mình.
 - Chỉ rõ khi mơ hồ: `Min[int64](a, b)`.
 - Constraint quá hẹp/rộng ảnh hưởng inference.
+
+**Go 1.27+:** suy luận hàm generic khi **gán hoặc convert** sang kiểu hàm khớp — không cần đối số gọi:
+
+```go
+func ident[T any](v T) T { return v }
+
+var f func(int) int = ident // T = int, từ kiểu đích
+g := ident[string]          // vẫn chỉ rõ khi chưa có kiểu đích
+_ = (func(int) int)(ident)
+```
+
+Trước 1.27, `var f func(int) int = ident` thường lỗi vì không suy được `T` ngoài ngữ cảnh gọi.
 
 ---
 
@@ -535,6 +571,7 @@ Hoặc alias (1.24+) nếu không cần method: `type Set[T comparable] = map[T]
 6. Đừng nhồi `any` constraint rồi type assert bên trong — đó không phải generics đúng nghĩa.
 7. Alias generic (1.24) cho identical shorthand; definition khi cần method.
 8. Self-referential constraint (1.26) khi API yêu cầu cùng kiểu nhận/trả.
+9. Thao tác “cùng type nhưng đổi type param” (`Map`/`Convert`) → generic method (1.27); đừng nhét vào interface.
 
 ### Cheat sheet
 
@@ -549,8 +586,8 @@ Hoặc alias (1.24+) nếu không cần method: `type Set[T comparable] = map[T]
 | Type set ∩ method | named type trong set **và** có method |
 | Alias generic | Go 1.24+ `type A[T any] = ...` |
 | Self-ref constraint | Go 1.26+ `type C[T C[T]] interface{...}` |
-| Method thêm `[U]` | không được |
+| Method thêm `[U]` | Go 1.27+ `func (T) M[U any](...)` — **không** implement interface |
 | Core type | bỏ khỏi spec từ 1.25 — nghĩ bằng type set |
-| Inference | từ arguments |
-| Stdlib | `slices`, `maps`, `unique`, `weak`, `errors.AsType` |
+| Inference | từ arguments; 1.27+ cả khi gán vào kiểu hàm |
+| Stdlib | `slices`, `maps`, `unique`, `weak`, `errors.AsType`; 1.27 `rand/v2.Rand.N` |
 | Tránh | generic sớm / một-shot / trùng stdlib |

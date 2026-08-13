@@ -2,7 +2,7 @@
 
 Ba kiểu tập hợp cốt lõi: **array** (cố định), **slice** (view động trên array), **map** (hash table). Slice và map là công cụ hàng ngày; hiểu header (ptr/len/cap) tránh bug chia sẻ bộ nhớ và reallocation.
 
-> Tài liệu nhắm **Go 1.26**; số liệu đo trên `go1.26.5 windows/amd64`. Mọi hàm `slices`/`maps` đều ghi version xuất hiện.
+> Tài liệu nhắm **Go 1.27**; số liệu đo trên `go1.26.5 windows/amd64` (tăng cap `append`, v.v.). Mọi hàm `slices`/`maps` đều ghi version xuất hiện.
 
 ---
 
@@ -555,7 +555,7 @@ slices.SortFunc(people, func(a, b Person) int {
 | `Collect` | **1.23** | `iter.Seq2[K,V]` → `map[K]V` |
 | `Insert(m, seq)` | **1.23** | nạp `iter.Seq2` vào map có sẵn |
 
-Đúng cho Go 1.26: `maps.Keys` và `maps.Values` trả về **iterator**, không phải slice. Bản trả slice chỉ tồn tại ở `golang.org/x/exp/maps` (không thuộc stdlib) — đừng lẫn hai API.
+Đúng từ Go 1.23 trở đi (kể cả 1.27): `maps.Keys` và `maps.Values` trả về **iterator**, không phải slice. Bản trả slice chỉ tồn tại ở `golang.org/x/exp/maps` (không thuộc stdlib) — đừng lẫn hai API.
 
 ```go
 m := map[string]int{"b": 2, "a": 1, "c": 3}

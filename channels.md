@@ -2,7 +2,7 @@
 
 Channel là primitive giao tiếp giữa goroutine: **gửi/nhận giá trị** và đồng bộ. “Don’t communicate by sharing memory; share memory by communicating.”
 
-Tài liệu này nhắm **Go 1.26**. Xem thêm [concurrency.md](concurrency.md), [context.md](context.md), [typesystem.md](typesystem.md), [statements.md](statements.md).
+Tài liệu này nhắm **Go 1.27**. Xem thêm [concurrency.md](concurrency.md), [context.md](context.md), [typesystem.md](typesystem.md), [statements.md](statements.md).
 
 ---
 
@@ -284,7 +284,7 @@ default:
 - `select{}` (không case) — block goroutine hiện tại mãi mãi. Trong `main` thì "giữ process sống"; nếu **mọi** goroutine đều block, runtime báo `fatal error: all goroutines are asleep - deadlock!`.
 - Case send trên channel `nil` cũng không bao giờ ready — dùng để tắt nhánh (mục 7).
 - `select` chỉ làm việc với channel op. Không "select" được trên mutex, `WaitGroup`, hay syscall.
-- Timeout: từ Go 1.23, `time.After` không còn leak timer đến khi fire (`go doc time.After`); hot loop `select` vẫn nên `NewTimer` + `Reset`/`Stop` — xem mục 11.
+- Timeout: từ Go 1.23, `time.After` không còn leak timer đến khi fire (`go doc time.After`); hot loop `select` vẫn nên `NewTimer` + `Reset`/`Stop` — xem mục 10.
 
 ---
 
@@ -496,7 +496,161 @@ Hiện đại hơn: dùng `context.Context` — [context.md](context.md).
 
 ---
 
-## 10. Khi nào `close`
+## 10. Timer, ticker & timeout
+
+`select` + channel thời gian:
+
+```go
+select {
+case v := <-ch:
+	use(v)
+case <-time.After(time.Second):
+	return errTimeout
+}
+```
+
+Từ **Go 1.23**, GC thu hồi timer/ticker **chưa Stop** nếu không còn reference (`go doc time.After` / `time.Tick`). Lời khuyên cũ “After leak đến khi fire” **không còn đúng**.
+
+Từ **Go 1.23** channel của `time` là **unbuffered** (synchronous). GODEBUG `asynctimerchan` bị **gỡ hẳn ở 1.27** — không còn cách bật buffered timer channel. Code dựa vào buffer (send không block khi không có receiver sẵn) sẽ deadlock.
+
+Vẫn tạo timer **mỗi lần** vào `select` — hot loop nên tái sử dụng:
+
+```go
+t := time.NewTimer(d)
+defer t.Stop()
+for {
+	select {
+	case v := <-ch:
+		if !t.Stop() {
+			select {
+			case <-t.C:
+			default:
+			}
+		}
+		t.Reset(d)
+		use(v)
+	case <-t.C:
+		return errIdle
+	}
+}
+```
+
+| API | Ghi chú (1.23+) |
+|-----|------------------|
+| `time.After(d)` | equivalent `NewTimer(d).C`; không còn lý do tránh vì GC |
+| `time.Tick(d)` | wrapper `NewTicker`; `d <= 0` → `nil` channel |
+| `time.NewTimer` / `NewTicker` | cần khi `Stop`/`Reset` chủ động |
+
+`time.After` trong **case** vẫn được đánh giá **trước** khi chọn case (mục 6) — mỗi vòng lặp `select` = một timer mới.
+
+---
+
+## 11. Hủy với `context` & backpressure
+
+```go
+func produce(ctx context.Context, out chan<- Item) error {
+	for {
+		item, err := next()
+		if err != nil {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return context.Cause(ctx) // 1.20+; wrap/signal: [context.md](context.md)
+		case out <- item:
+		}
+	}
+}
+```
+
+- Buffer nhỏ = backpressure: sender chậm theo receiver.
+- Buffer lớn = hấp thụ burst, che mất chậm — đo trước khi tăng.
+- Quên `ctx.Done()` trên cả send **và** receive → leak goroutine khi hủy.
+- `context.AfterFunc` (1.21) thay “goroutine chờ `Done` rồi close”.
+
+---
+
+## 12. Semaphore & worker pool
+
+Semaphore bằng buffered channel:
+
+```go
+sem := make(chan struct{}, 8) // tối đa 8 việc song song
+for _, job := range jobs {
+	sem <- struct{}{}
+	go func(job Job) {
+		defer func() { <-sem }()
+		do(job)
+	}(job)
+}
+// đợi hết: for i := 0; i < cap(sem); i++ { sem <- struct{}{} }
+```
+
+Worker pool: channel job + `WaitGroup.Go` (1.25) hoặc `errgroup` — [concurrency.md](concurrency.md). Channel chỉ là hàng đợi; đừng nhồi logic hủy/timeout vào buffer.
+
+---
+
+## 13. Iterator thay generator channel
+
+Generator “`go` + `chan` + `close`” **rò goroutine** nếu consumer `break` sớm. Từ 1.23, push iterator không cần goroutine:
+
+```go
+func Count(n int) iter.Seq[int] {
+	return func(yield func(int) bool) {
+		for i := range n {
+			if !yield(i) {
+				return
+			}
+		}
+	}
+}
+```
+
+Dùng channel khi cần **đồng bộ giữa goroutine** / backpressure / select nhiều nguồn. Dùng `iter.Seq` khi chỉ stream tuần tự trên một goroutine. [functions.md](functions.md) §14, [collections.md](collections.md).
+
+---
+
+## 14. Channel of channels & request/reply
+
+```go
+type req struct {
+	arg  int
+	reply chan int // mỗi request một channel trả lời
+}
+
+func server(in <-chan req) {
+	for r := range in {
+		r.reply <- r.arg * 2
+		close(r.reply)
+	}
+}
+
+reply := make(chan int, 1)
+in <- req{arg: 21, reply: reply}
+fmt.Println(<-reply) // 42
+```
+
+- Buffer `reply` (1) tránh deadlock nếu server gửi trước khi client nhận.
+- Đóng `reply` sau một giá trị để `range` phía client kết thúc.
+- Đắt hơn mutex cho RPC nội bộ đơn giản — chỉ khi cần timeout/`select` trên reply.
+
+---
+
+## 15. Memory model & chi phí channel
+
+Happens-before (rút gọn, spec):
+
+- Send trên channel **happens before** receive hoàn thành (kể cả buffered: send thứ k happens before receive thứ k).
+- `close` happens before nhận `zero, ok=false`.
+- Unbuffered: receive happens before send hoàn thành (đồng bộ hai chiều).
+
+Chi phí (mô hình, không phải số đo): mỗi op lấy lock runtime + **copy** giá trị. Struct lớn qua channel = copy; gửi pointer/`[]byte` thì copy header, dữ liệu nền share.
+
+Đừng dùng channel làm mutex trừ khi cần truyền dữ liệu. [concurrency.md](concurrency.md) §10.
+
+---
+
+## 16. Khi nào `close`
 
 **Đóng khi:**
 
@@ -530,7 +684,7 @@ go func() {
 
 ---
 
-## 11. Pitfalls
+## 17. Pitfalls
 
 1. Deadlock: gửi/nhận unbuffered cùng goroutine không có đối tác.  
 2. Send trên closed channel → panic.  
@@ -542,7 +696,7 @@ go func() {
 
 ---
 
-## 12. Best practices
+## 18. Best practices
 
 1. API nhận `<-chan` / gửi `chan<-` khi có thể.  
 2. Document ai đóng channel.  
@@ -565,3 +719,5 @@ go func() {
 | `select` | đa kênh / timeout |
 | `nil` chan trong select | tắt case |
 | `chan<-` / `<-chan` | một chiều |
+| `time.After` (1.23+) | không leak GC; hot loop vẫn `Reset` |
+| `iter.Seq` | generator không goroutine |

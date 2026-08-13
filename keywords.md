@@ -32,7 +32,7 @@
 26. [Predeclared identifiers (không phải keyword)](#26-predeclared-identifiers-không-phải-keyword)
 27. [Ngữ nghĩa keyword theo phiên bản & modernizer](#27-ngữ-nghĩa-keyword-theo-phiên-bản--modernizer)
 
-Go có đúng **25 từ khóa dành riêng (reserved keywords)**. Danh sách này **chưa từng thay đổi** kể từ Go 1 — mọi tính năng mới (generics, `range` over int/func, `new(expr)`) đều được thêm mà không cần keyword mới. Không dùng chúng làm tên biến, hàm, kiểu, hay package.
+Go có đúng **25 từ khóa dành riêng (reserved keywords)**. Danh sách này **chưa từng thay đổi** kể từ Go 1 — mọi tính năng mới (generics, `range` over int/func, `new(expr)`, generic method) đều được thêm mà không cần keyword mới. Không dùng chúng làm tên biến, hàm, kiểu, hay package.
 
 ---
 
@@ -848,6 +848,7 @@ Danh sách 25 keyword không đổi, nhưng **hành vi** của một số keywor
 | 1.24 | `type` | generic type alias |
 | 1.25 | — | không có thay đổi ngôn ngữ; spec bỏ khái niệm "core type" |
 | 1.26 | (predeclared), `interface` | `new(expr)`; generic type tự tham chiếu trong type parameter list |
+| 1.27 | `func`, `type`, `struct` | generic method; struct literal key = field selector; suy luận hàm generic khi gán |
 
 Từ Go 1.26, `go fix` được viết lại trên nền vet analysis framework và trở thành nơi chứa các **modernizer** — chạy `go fix ./...` (hoặc `go fix -diff ./...` để xem patch) để tự động hiện đại hóa code. Xem danh sách bằng `go tool fix help`. Những modernizer liên quan trực tiếp tới keyword trong file này:
 
@@ -858,7 +859,7 @@ Từ Go 1.26, `go fix` được viết lại trên nền vet analysis framework 
 | `forvar` | bỏ dòng `v := v` dư thừa trong vòng lặp (không cần từ 1.22) |
 | `newexpr` | dùng `new(expr)` của Go 1.26 |
 | `minmax` | `if`/`else` chọn lớn/nhỏ → `min` / `max` |
-| `waitgroup` | `wg.Add(1)` + `go` + `wg.Done()` → `wg.Go` |
+| `waitgroup` / `waitgroupgo` | `wg.Add(1)` + `go` + `wg.Done()` → `wg.Go` (1.27 đổi tên analyzer thành `waitgroupgo`) |
 | `any` | `interface{}` → `any` |
 | `stringsseq` | `range` trên `strings.Split` → `strings.SplitSeq` |
 | `stditerators` | API kiểu `Len`/`At` → iterator |
@@ -869,5 +870,5 @@ Từ Go 1.26, `go fix` được viết lại trên nền vet analysis framework 
 
 - Đúng **25 keywords**, không đổi từ Go 1 — mọi thứ khác (kể cả `int`, `nil`, `make`, `min`, `any`) chỉ là predeclared identifier trong universe block.
 - Keyword không thể dùng làm identifier; predeclared identifier thì được (nhưng đừng).
-- Ba thay đổi hành vi dễ bị viết sai trong tài liệu cũ: `for i := range n` **là** tính năng ổn định (1.22), biến vòng lặp **là** per-iteration (1.22), `new` **nhận biểu thức** (1.26).
+- Ba thay đổi hành vi dễ bị viết sai trong tài liệu cũ: `for i := range n` **là** tính năng ổn định (1.22), biến vòng lặp **là** per-iteration (1.22), `new` **nhận biểu thức** (1.26). Generic method **là** hợp lệ từ 1.27.
 - Học sâu hành vi: [statements.md](statements.md), [operators.md](operators.md), [functions.md](functions.md), [methods-interfaces.md](methods-interfaces.md), [typesystem.md](typesystem.md).

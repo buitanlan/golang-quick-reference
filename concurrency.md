@@ -2,7 +2,7 @@
 
 Goroutine là đơn vị concurrency nhẹ của Go. Package `sync` cung cấp primitive đồng bộ (WaitGroup, Mutex, Once…). Channel (file riêng) phối hợp truyền dữ liệu; `sync` phối hợp chia sẻ bộ nhớ — **prefer channel khi truyền ownership**, mutex khi bảo vệ state ngắn.
 
-Tài liệu này nhắm **Go 1.26**; API mới hơn Go 1.21 được ghi rõ phiên bản. Xem thêm [channels.md](channels.md), [context.md](context.md), [typesystem.md](typesystem.md).
+Tài liệu này nhắm **Go 1.27**; API mới hơn Go 1.21 được ghi rõ phiên bản. Xem thêm [channels.md](channels.md), [context.md](context.md), [typesystem.md](typesystem.md).
 
 ---
 
@@ -518,6 +518,7 @@ Phát hiện:
 | `runtime.NumGoroutine()` trước/sau test | smoke check nhanh, hay flaky |
 | `pprof.Lookup("goroutine").WriteTo(w, 1)` | in stack mọi goroutine đang sống |
 | `net/http/pprof` → `/debug/pprof/goroutine?debug=2` | production, xem goroutine kẹt ở đâu |
+| `/debug/pprof/goroutineleak` (1.27, cũng `pprof.Lookup("goroutineleak")`) | goroutine block trên primitive **unreachable** — leak class lớn; miss nếu primitive còn reach từ global / goroutine đang chạy |
 | `go.uber.org/goleak` (third-party) | assert trong `TestMain` |
 | `testing/synctest` (1.25) | `Test` báo deadlock khi cả bubble kẹt (mục 12) |
 | metric `/sched/goroutines:goroutines` | dashboard số goroutine sống |
@@ -536,11 +537,12 @@ func init() {
 
 ## 12. Test tất định với `testing/synctest`
 
-`testing/synctest` là **experiment ở Go 1.24** (bật qua `GOEXPERIMENT=synctest`) và **thành package chuẩn ở Go 1.25**. Trên go1.26 toàn bộ API chỉ có hai hàm:
+`testing/synctest` là **experiment ở Go 1.24** (bật qua `GOEXPERIMENT=synctest`) và **thành package chuẩn ở Go 1.25**.
 
 ```go
 func Test(t *testing.T, f func(*testing.T))
 func Wait()
+func Sleep(d time.Duration) // Go 1.27: Sleep + Wait gộp một bước
 ```
 
 `Test` chạy `f` trong một **bubble** cô lập:
@@ -771,6 +773,7 @@ RunPool(ctx, jobs, 8)
 | 1.24 | `runtime.AddCleanup`, `weak.Pointer`, `testing.T.Context`; `synctest` là experiment |
 | 1.25 | `WaitGroup.Go`; `testing/synctest` chuẩn; default `GOMAXPROCS` theo cgroup + auto-update, `runtime.SetDefaultGOMAXPROCS` |
 | 1.26 | `signal.NotifyContext` hủy kèm cause → `context.Cause(ctx)` cho biết signal nào |
+| 1.27 | profile `goroutineleak` tốt nghiệp experiment; channel `time` **luôn** unbuffered (`asynctimerchan` GODEBUG gỡ hẳn); alloc nhỏ size-specialized (~+60KB binary) |
 
 ### Checklist
 

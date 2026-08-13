@@ -2,7 +2,7 @@
 
 Hàm là đơn vị tổ chức code cơ bản của Go, đồng thời là **giá trị first-class**. Nắm chắc bốn thứ là đủ tự tin: thời điểm đối số được đánh giá, named result tương tác với `defer`/`recover` thế nào, closure capture cái gì, và khi nào compiler inline / đẩy dữ liệu lên heap.
 
-> Tài liệu nhắm **Go 1.26**; tính năng mới hơn 1.21 được ghi rõ version — xem bảng ở cuối. Luật kiểu nào được bật phụ thuộc directive `go` trong `go.mod`, không phải toolchain đang cài — xem [typesystem.md](typesystem.md) và [build-constraints.md](build-constraints.md).
+> Tài liệu nhắm **Go 1.27**; tính năng mới hơn 1.21 được ghi rõ version — xem bảng ở cuối. Luật kiểu nào được bật phụ thuộc directive `go` trong `go.mod`, không phải toolchain đang cài — xem [typesystem.md](typesystem.md) và [build-constraints.md](build-constraints.md).
 
 ---
 
@@ -972,7 +972,119 @@ defer func() {
 
 ---
 
-## 12. Best practices
+## 12. Method value & method expression
+
+Hai cách lấy hàm từ method — khác nhau ở **khi nào** receiver bị chốt:
+
+```go
+type Counter struct{ n int }
+
+func (c *Counter) Inc()      { c.n++ }
+func (c Counter) Value() int { return c.n }
+
+var c Counter
+
+f := c.Inc          // method value: receiver (&c) chốt ngay; kiểu func()
+g := (*Counter).Inc // method expression: kiểu func(*Counter)
+h := Counter.Value  // method expression: kiểu func(Counter) int
+
+f()
+g(&c)
+fmt.Println(h(c))
+```
+
+| Dạng | Kiểu | Receiver |
+|------|------|----------|
+| `c.Inc` (value) | `func()` | chốt lúc tạo `f`; copy nếu value receiver |
+| `(*T).Inc` (expression) | `func(*T)` | truyền lúc gọi |
+| `T.Value` (expression) | `func(T) int` | truyền lúc gọi, **copy** `T` |
+
+- Method value với value receiver **copy** struct ngay — `defer c.Value()` không thấy mutation sau đó.
+- Method value với pointer receiver giữ `*T`; object phải sống đến lúc gọi (thường OK vì pointer).
+- Gán method value vào `any` / `http.HandlerFunc` có thể **escape** receiver — xem `-gcflags='-m'`.
+- Method set / addressability: [methods-interfaces.md](methods-interfaces.md).
+
+---
+
+## 13. Hàm generic & suy luận kiểu
+
+```go
+func Map[T, U any](in []T, f func(T) U) []U {
+	out := make([]U, len(in))
+	for i, v := range in {
+		out[i] = f(v)
+	}
+	return out
+}
+
+nums := Map([]int{1, 2, 3}, strconv.Itoa) // T, U suy từ đối số
+```
+
+- Type param viết trong `[...]` **trước** danh sách đối số giá trị.
+- Inference từ argument; ít khi suy được chỉ từ kiểu trả về → `Parse[int](s)` khi mơ hồ.
+- **Go 1.27+:** gán/convert hàm generic sang kiểu hàm khớp cũng suy được type param: `var f func(int) int = ident`.
+- Constraint quyết định toán tử/method được dùng trong thân (`cmp.Ordered`, `comparable`, type set).
+- **Không** type-switch trực tiếp trên `T` — `switch any(v).(type)`.
+- Method generic (1.27): [generics.md](generics.md) §9, [methods-interfaces.md](methods-interfaces.md) §3.3.
+- Chi tiết constraint / alias / self-ref: [generics.md](generics.md), [typesystem.md](typesystem.md) §12.
+
+---
+
+## 14. Kiểu hàm & iterator (Go 1.23+)
+
+Kiểu hàm first-class; từ 1.23 một số **shape** range được:
+
+```go
+import "iter"
+
+func Count(n int) iter.Seq[int] {
+	return func(yield func(int) bool) {
+		for i := range n {
+			if !yield(i) {
+				return
+			}
+		}
+	}
+}
+
+for i := range Count(3) {
+	fmt.Print(i)
+}
+```
+
+- `iter.Seq[V]` = `func(yield func(V) bool)`; `yield` trả `false` → consumer `break`.
+- `iter.Pull` đổi push → pull (`next, stop := iter.Pull(seq)`; **`defer stop()`**).
+- `maps.Keys` / `slices.Values` trả iterator, không phải slice — [collections.md](collections.md).
+- Iterator **không** phải channel: không goroutine, không leak sender; cũng không hủy bằng `context` trừ khi tự truyền vào producer.
+
+---
+
+## 15. Inlining, escape & chi phí gọi hàm
+
+Compiler quyết định inline và stack vs heap. Không đoán — đo:
+
+```bash
+go build -gcflags="-m -m" .
+```
+
+Output thật (go1.26.5) với closure capture:
+
+```text
+./main.go:30:2: moved to heap: n
+./main.go:31:9: func literal escapes to heap
+```
+
+Những thứ **chặn inline** (rút gọn, từ điều kiện compiler):
+
+- `defer` trong hàm (trừ open-coded defer — xem [keywords.md](keywords.md) / [statements.md](statements.md))
+- `go` statement, `recover`, quá nhiều defers, `-race`, `-gcflags=-N`
+- Hàm quá lớn / recursive sâu
+
+Boxing vào `any` / `...any` (`fmt.Println`) thường **escape**. Hot path: generics hoặc kiểu cụ thể thay `any`. Escape analysis tổng quan: [typesystem.md](typesystem.md) §15, [pointers.md](pointers.md) §7.
+
+---
+
+## 16. Best practices
 
 | Nên | Tránh |
 |-----|--------|
@@ -1001,13 +1113,27 @@ func LoadJSON[T any](path string) (T, error) {
 }
 ```
 
-*(Generic cần Go 1.18+; tài liệu nhắm Go 1.26.)*
+*(Generic cần Go 1.18+; tài liệu nhắm Go 1.27.)*
+
+### Tính năng theo phiên bản
+
+| Version | Liên quan hàm |
+|---------|----------------|
+| 1.18 | type parameter trên hàm/kiểu |
+| 1.21 | `panic(nil)` → `*runtime.PanicNilError`; `sync.OnceFunc`/`OnceValue`; `context.AfterFunc` |
+| 1.22 | biến vòng lặp per-iteration (closure an toàn hơn) |
+| 1.23 | `range` over `iter.Seq` / func |
+| 1.24 | generic type alias; `runtime.AddCleanup` |
+| 1.26 | `new(expr)`; constraint tự tham chiếu |
+| 1.27 | generic method; suy luận hàm generic khi gán vào kiểu hàm |
 
 ---
 
 ## Tài liệu liên quan
 
-- [statements.md](statements.md) — `defer`, `return`, scope
+- [statements.md](statements.md) — `defer`, `return`, scope, `range` int/func
 - [keywords.md](keywords.md) — `func`, `go`, `defer`, `return`
-- [methods-interfaces.md](methods-interfaces.md) — method là hàm có receiver
-- **errors.md** — xử lý lỗi chi tiết (tham chiếu)
+- [methods-interfaces.md](methods-interfaces.md) — method set, method value vs expression
+- [generics.md](generics.md) — constraint, type set, inference
+- [errors.md](errors.md) — `error`, wrap, `AsType`
+- [typesystem.md](typesystem.md) — escape, iterator types

@@ -2,7 +2,7 @@
 
 Struct là kiểu dữ liệu tổng hợp (composite type) chính của Go — nhóm các field thành một đơn vị. Go **không** có class/inheritance; thay vào đó dùng **composition** (embedding + chứa field tường minh) và interface để tái sử dụng hành vi.
 
-Tài liệu nhắm Go 1.18–1.26. So sánh kiểu / NaN / `comparable`: [typesystem.md](typesystem.md). Method set & embedding hành vi: [methods-interfaces.md](methods-interfaces.md).
+Tài liệu nhắm Go 1.18–1.27. So sánh kiểu / NaN / `comparable`: [typesystem.md](typesystem.md). Method set & embedding hành vi: [methods-interfaces.md](methods-interfaces.md).
 
 ---
 
@@ -116,6 +116,20 @@ ptr2 := new(Point)          // *Point, zero value
 - Positional chỉ nên dùng trong package nhỏ, test nội bộ.
 - Có thể lấy địa chỉ của literal: `&T{...}` (Go cấp phát trên heap nếu cần).
 - Go 1.26+: `new(expr)` tiện cho optional pointer field — xem [typesystem.md](typesystem.md) §5.
+
+**Go 1.27+:** key của struct literal có thể là **field selector** hợp lệ, không chỉ tên field cấp cao nhất — hữu ích khi embed:
+
+```go
+type Point struct{ X, Y int }
+type Named struct {
+	Point
+	Label string
+}
+
+n := Named{Point.X: 1, Point.Y: 2, Label: "p"}
+// trước 1.27: Named{Point: Point{X: 1, Y: 2}, Label: "p"}
+// hoặc, nếu không trùng tên: Named{X: 1, Y: 2, Label: "p"}
+```
 
 Cập nhật field:
 

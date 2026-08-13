@@ -3,7 +3,7 @@
 Go tổ chức mã nguồn quanh **package** (đơn vị biên dịch/API) và **module** (đơn vị phiên bản & phụ thuộc).  
 Hiểu rõ visibility, import path, `go.mod`/`go.work`, và `internal` là nền tảng làm việc với codebase lớn.
 
-Tài liệu này nhắm **Go 1.26** (`go1.26.5`). Directive `go` trong `go.mod` chọn **language version** — xem [typesystem.md](typesystem.md). Build tags / file selection: [build-constraints.md](build-constraints.md).
+Tài liệu này nhắm **Go 1.27**. Directive `go` trong `go.mod` chọn **language version** — xem [typesystem.md](typesystem.md). Build tags / file selection: [build-constraints.md](build-constraints.md).
 
 ---
 
@@ -164,9 +164,9 @@ Module là đơn vị versioning. File gốc (các directive phổ biến):
 ```go
 module example.com/shop
 
-go 1.26
+go 1.27
 
-toolchain go1.26.5
+toolchain go1.27.0
 
 godebug (
 	default=go1.21
@@ -240,13 +240,14 @@ go get -tool example.com/cmd/foo@v1.2.3   # thêm tool (1.24+)
 - **Major v2+**: module path phải có hậu tố `/vN` khớp major (`github.com/foo/bar/v3`). Import path trong code cũng dùng `/vN`. (Major `v0`/`v1` không thêm hậu tố.)
 - Pseudo-version dạng: `v0.0.0-yyyymmddhhmmss-commitsha`.
 - Từ **Go 1.21+**: dòng `go` = language version; toolchain có thể tự chọn qua `toolchain` + `GOTOOLCHAIN` (mặc định `auto`).
+- **Go 1.27:** `go` không còn hỗ trợ VCS **Bazaar (`bzr`)** — không fetch trực tiếp module host trên server bzr.
 
 ```go
 module example.com/shop
 
-go 1.26
+go 1.27
 
-toolchain go1.26.5
+toolchain go1.27.0
 ```
 
 `GOTOOLCHAIN` (xem `go help environment`, [go.dev/doc/toolchain](https://go.dev/doc/toolchain)):
@@ -269,7 +270,7 @@ toolchain go1.26.5
 ```go
 module example.com/shop
 
-go 1.26
+go 1.27
 
 require github.com/acme/lib v1.4.0
 
@@ -304,7 +305,7 @@ go list -m -retracted example.com/m@latest
 Từ Go 1.18, workspace làm việc đồng thời nhiều module:
 
 ```go
-go 1.26
+go 1.27
 
 use (
 	./shop
@@ -508,7 +509,6 @@ Các reserved pattern khác (`go help packages`): `all`, `std`, `cmd`, `tool`, v
 godebug (
 	default=go1.21
 	panicnil=1
-	asynctimerchan=0
 )
 ```
 
@@ -522,6 +522,7 @@ package main
 - `default=go1.XX` chọn bộ mặc định GODEBUG theo phiên bản, tách khỏi language version ở dòng `go`.
 - Chỉ `godebug` của **work module** được đọc; dependency bỏ qua. Có `go.work` → đọc `godebug` từ `go.work`, không từ `go.mod`.
 - Key không tồn tại → lỗi. Nhiều `//go:debug` cùng key → lỗi.
+- **Go 1.27+:** setting đã **gỡ hẳn** (ví dụ `asynctimerchan`) vẫn được chấp nhận trong `godebug` / `//go:debug` **chỉ khi** giá trị là mặc định cuối cùng trước khi gỡ. Set giá trị cũ → `go` command **fail**. Channel của `time` luôn unbuffered — không còn GODEBUG để đổi.
 - Xem mặc định đã compile vào main:
 
 ```bash
@@ -541,7 +542,7 @@ Từ `go 1.17+`, `go.mod` ghi đủ `require` (kể cả indirect) cho mọi mod
 ```bash
 go mod tidy                 # đồng bộ require/sum theo import thực tế
 go mod tidy -diff           # in unified diff, không ghi file
-go mod tidy -go=1.26        # đồng thời cập nhật dòng go
+go mod tidy -go=1.27        # đồng thời cập nhật dòng go
 go mod why github.com/x/y   # đường import ngắn nhất từ main module
 go mod why -m github.com/x/y
 go mod graph                # cạnh module requirement (sau replace)
@@ -555,6 +556,7 @@ go mod verify
 - `go mod vendor`: tạo `vendor/`; build với `-mod=vendor` (hoặc khi `vendor/` có mặt tùy cấu hình). Không gồm test của dependency.
 - Đừng commit `go.sum` lệch tay; để `tidy`/`get` quản lý.
 - Module bị prune vẫn có thể xuất hiện trong graph của dependency cũ (`go 1.16` trở xuống) — nâng `go` giúp graph gọn hơn.
+- **Go 1.27+:** `go mod tidy` (khi dòng `go` ≥ 1.27) gộp các khối `require` rời thành **tối đa hai** khối: direct và indirect. Comment gắn mixed block được chuyển sang khối direct.
 
 ---
 
@@ -595,7 +597,9 @@ go tool fix help newexpr
 go tool fix help inline
 ```
 
-Ví dụ analyzer (chạy `go tool fix help` để xem đủ trên toolchain hiện tại): `any`, `minmax`, `rangeint`, `mapsloop`, `slicescontains`, `stringsseq`, `waitgroup`, `newexpr` (`new(expr)` — 1.26), `inline` (theo `//go:fix inline`), `plusbuild`, …
+Ví dụ analyzer (chạy `go tool fix help` để xem đủ trên toolchain hiện tại): `any`, `minmax`, `rangeint`, `mapsloop`, `slicescontains`, `stringsseq`, `waitgroup` / `waitgroupgo` (1.27 đổi tên), `newexpr` (`new(expr)` — 1.26), `inline` (theo `//go:fix inline`), `plusbuild`, …
+
+Go **1.27** thêm modernizer: `atomictypes`, `embedlit`, `slicesbackward`, `unsafefuncs`. Gỡ `fmtappendf`.
 
 - Modernizer chỉ đề xuất fix trong file đã yêu cầu đủ language version (`go` trong `go.mod` hoặc `//go:build go1.x` trên file) — tránh “nhảy cóc” tính năng.
 - `//go:fix inline` đánh dấu func/const để `go fix` (analyzer `inline`) thay call site bằng body — migration API tự phục vụ; chi tiết pragma ở [build-constraints.md](build-constraints.md).

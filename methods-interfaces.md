@@ -1,6 +1,6 @@
 # Method & Interface trong Go
 
-Method gắn hành vi vào kiểu; interface mô tả tập method mà kiểu thỏa **ngầm**. Tài liệu nhắm Go 1.18–1.26 — chi tiết type system xem [typesystem.md](typesystem.md), generics xem [generics.md](generics.md).
+Method gắn hành vi vào kiểu; interface mô tả tập method mà kiểu thỏa **ngầm**. Tài liệu nhắm Go 1.18–1.27 — chi tiết type system xem [typesystem.md](typesystem.md), generics xem [generics.md](generics.md).
 
 ---
 
@@ -9,6 +9,7 @@ Method gắn hành vi vào kiểu; interface mô tả tập method mà kiểu th
 1. [Method — khái niệm](#1-method--khái-niệm)
 2. [Receiver: value vs pointer](#2-receiver-value-vs-pointer)
 3. [Method set (`T` vs `*T`) & addressability](#3-method-set-t-vs-t--addressability)
+    - [3.3 Generic method (Go 1.27+)](#33-generic-method-go-127)
 4. [Embedding & method promotion](#4-embedding--method-promotion)
 5. [Interface — thỏa mãn ngầm](#5-interface--thỏa-mãn-ngầm)
 6. [`any` / empty interface](#6-any--empty-interface)
@@ -169,6 +170,29 @@ m["a"] = tmp
 ```
 
 Quy tắc thực dụng: API public thường dùng pointer receiver + lưu/truyền `*T` khi cần thỏa interface có method mutate.
+
+### 3.3 Generic method (Go 1.27+)
+
+Method có thể thêm type parameter riêng. Nó **không** vào method set dùng cho interface:
+
+```go
+type Box[T any] struct{ v T }
+
+func (b Box[T]) Map[U any](f func(T) U) Box[U] {
+	return Box[U]{v: f(b.v)}
+}
+
+func (b Box[T]) Get() T { return b.v }
+
+type Getter[T any] interface{ Get() T }
+
+var _ Getter[int] = Box[int]{} // OK — Get không generic
+// Map không thỏa interface nào: chữ ký phụ thuộc U lúc gọi
+```
+
+- Interface method **không** được generic.
+- Generic method không implement interface method.
+- Chi tiết và lỗi `method must have no type parameters` trên lang < 1.27: [generics.md](generics.md) §9.
 
 ---
 
@@ -566,9 +590,10 @@ if pe, ok := errors.AsType[*fs.PathError](err); ok {
 3. Interface **nhỏ**, định nghĩa phía **consumer**; accept interface, return concrete.
 4. Cẩn thận **typed nil** khi return `error` / interface.
 5. Compose giống `io`: nhiều interface hẹp hơn một interface “làm hết”.
-6. Generic + `comparable` / type set / stdlib (`slices`, `maps`, `cmp`) thay `any` + assert khi kiểu tĩnh (Go 1.18–1.26).
+6. Generic + `comparable` / type set / stdlib (`slices`, `maps`, `cmp`) thay `any` + assert khi kiểu tĩnh (Go 1.18–1.27).
 7. Embedding để promote method — không giả lập class hierarchy sâu.
 8. Lỗi typed: ưu tiên `errors.AsType` (1.26+) thay assert trực tiếp trên wrapped error.
+9. Generic method (1.27) cho thao tác đổi type param; **đừng** đưa chúng vào interface.
 
 ### Ví dụ tổng hợp
 

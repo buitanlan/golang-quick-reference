@@ -544,7 +544,7 @@ clamped := max(0, min(n, limit))
 
 `min`/`max` là **built-in function**, không phải toán tử: nhận ≥ 1 đối số cùng kiểu ordered, hoạt động cả với `string`, và là biểu thức hằng nếu mọi đối số là hằng. `go fix` có modernizer `minmax` tự chuyển `if a > b { m = a } else { m = b }` sang `max(a, b)`.
 
-Vẫn không có ternary trong Go 1.26, và cũng không có đề xuất nào được chấp nhận.
+Vẫn không có ternary trong Go 1.27, và cũng không có đề xuất nào được chấp nhận.
 
 ---
 
@@ -613,6 +613,7 @@ func Sum[T cmp.Ordered](xs []T) T {
 | 1.21    | built-in `min`/`max`/`clear`; `cmp.Ordered`, `cmp.Compare`, `cmp.Less`; `slices.Equal`, `maps.Equal` |
 | 1.22    | `cmp.Or` thay chuỗi "giá trị non-zero đầu tiên" |
 | 1.26    | `new(expr)` thay mẫu "biến tạm rồi `&`"; `go fix` chứa modernizer `minmax`, `stringsbuilder`, `newexpr` |
+| 1.27    | không thêm toán tử; generic method / gán hàm generic không đổi bảng precedence |
 
 Không có toán tử mới nào được thêm vào Go từ Go 1 — mọi cải thiện đều đến từ built-in function và package (`cmp`, `slices`, `maps`).
 

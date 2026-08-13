@@ -445,6 +445,8 @@ q := &[3]int{1, 2, 3}          // *[3]int
 - `&` trên map/slice element hoặc giá trị trả về hàm thì **không** addressable — xem [pointers.md](pointers.md), [operators.md](operators.md).
 - Từ 1.26, nhiều chỗ trước đây cần biến tạm/`&` có thể viết `new(expr)` (§13).
 
+**Go 1.27+:** keyed struct literal chấp nhận selector field embed (`Point.X: 1`) — [structs-composition.md](structs-composition.md) §4.
+
 Parsing note: composite literal ngay sau `if`/`for`/`switch` có thể cần ngoặc `(T{})` để tránh nhầm với block.
 
 ---
@@ -549,5 +551,6 @@ Bảng tóm tắt literal:
 | 1.13 | `0b`/`0o`, hex float `0x1p-2`, separator `_` |
 | 1.21 | `min`/`max`/`clear` dùng được trong const expression (với args const) |
 | 1.26 | `new(expr)` — pointer tới giá trị khởi tạo từ expression |
+| 1.27 | struct literal key = field selector (`Embedded.Field: v`) |
 
 ---

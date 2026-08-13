@@ -469,6 +469,7 @@ if errors.Is(err, context.DeadlineExceeded) { ... }
 | 1.20 | `WithCancelCause`, `Cause`, `CancelCauseFunc` |
 | 1.21 | `AfterFunc`, `WithoutCancel`, `WithDeadlineCause`, `WithTimeoutCause` |
 | 1.26 | `NotifyContext` hủy kèm cause → `context.Cause` cho biết signal |
+| 1.27 | `httptest.NewTestServer` (in-memory, dùng với `testing/synctest`); `synctest.Sleep` |
 
 ### Checklist
 
