@@ -2,7 +2,7 @@
 
 Bộ tài liệu tham chiếu **in-depth / advanced** cho ngôn ngữ Go, nhắm **Go 1.27** ([release notes](https://go.dev/doc/go1.27)). Không phải giáo trình nhập môn: các khái niệm được trình bày dạng tham khảo nhanh kèm chi tiết nâng cao (semantics, version gates, pitfalls). Nếu chưa biết Go, bắt đầu bằng Tour of Go / Effective Go bên dưới, rồi dùng bộ này khi cần tra cứu sâu hơn.
 
-Luật kiểu/câu lệnh nào được bật phụ thuộc dòng `go` trong `go.mod` (language version), không phải toolchain đang cài. Trên toolchain **1.26.x**, compiler vẫn từ chối generic method: `method must have no type parameters` — cần `-lang` ≥ `go1.27`.
+Luật kiểu/câu lệnh nào được bật phụ thuộc dòng `go` trong `go.mod` (language version), không phải toolchain đang cài. Generic method và keyed literal dùng field được promote cần language ≥ 1.27: toolchain **1.27** với `go` directive cũ báo `generic method requires go1.27 or later` / `use of promoted field … requires go1.27 or later`; toolchain **1.26** báo `method must have no type parameters`.
 
 Bộ này là **tham chiếu ngôn ngữ**. Stdlib 1.27 ngoài scope từng file (nhưng đáng biết khi nâng version): `encoding/json` chuyển sang engine v2 (opt-out `GOEXPERIMENT=nojsonv2`), package `uuid`, `crypto/mldsa`, `encoding/json/v2` + `jsontext`. Chi tiết: [Go 1.27 release notes](https://go.dev/doc/go1.27).
 

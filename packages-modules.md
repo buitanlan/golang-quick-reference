@@ -257,8 +257,8 @@ toolchain go1.27.0
 | `auto` (mặc định) | = `local+auto`: dùng toolchain bundled; nâng nếu `go`/`toolchain` trong `go.mod`/`go.work` yêu cầu mới hơn |
 | `local` | Luôn dùng toolchain đang cài; không tải thêm |
 | `path` | = `local+path`: nâng nếu cần nhưng chỉ tìm trên `PATH`, không download |
-| `go1.26.5` | Ép đúng toolchain đó |
-| `go1.26.5+auto` | Baseline cố định, vẫn cho phép nâng theo `go.mod` |
+| `go1.27.0` | Ép đúng toolchain đó |
+| `go1.27.0+auto` | Baseline cố định, vẫn cho phép nâng theo `go.mod` |
 
 - Từ **Go 1.25**: khi `go` command cập nhật dòng `go` trong `go.mod`/`go.work`, nó **không còn** tự thêm dòng `toolchain` ghi phiên bản đang chạy.
 - Language feature nào được biên dịch phụ thuộc dòng `go` (và có thể `//go:build go1.x` theo file) — chi tiết [typesystem.md](typesystem.md), [build-constraints.md](build-constraints.md).

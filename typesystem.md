@@ -62,7 +62,8 @@ m := 20          // m có kiểu int (untyped constant 20 → int theo ngữ c�
 // cannot range over Count(3) (value of func type iter.Seq[int]): requires go1.23 or later
 
 // go 1.26 + toolchain 1.27: generic method vẫn lỗi
-// method must have no type parameters
+// generic method requires go1.27 or later (-lang was set to go1.26; check go.mod)
+// toolchain 1.26: method must have no type parameters
 ```
 
 - Nâng version ngôn ngữ = nâng `go` directive, không chỉ cài Go mới.
@@ -712,7 +713,7 @@ func nameOf[T any]() string {
 
 - Constraint là interface **chỉ dùng làm constraint** nếu chứa type set (`~int | ~string`) — không dùng làm kiểu biến.
 - Instantiation không sinh code cho mỗi kiểu: compiler dùng **GC shape stenciling** + dictionary, nên generics không nhanh bằng code viết tay cho từng kiểu.
-- **Go 1.27+:** method được khai báo type parameter riêng; gán hàm generic vào biến kiểu hàm suy luận được `T` từ chữ ký đích. Chi tiết: [generics.md](generics.md) §9–10.
+- **Go 1.27+:** method được khai báo type parameter riêng; suy luận hàm generic khi convert / composite literal / gửi channel. Chi tiết: [generics.md](generics.md) §9–10.
 
 **Go 1.26+: constraint tự tham chiếu.** Kiểu generic được phép xuất hiện trong type parameter list của chính nó (F-bounded polymorphism) — diễn tả “T phải trả về chính kiểu T”:
 
@@ -1019,7 +1020,7 @@ Checklist thực tế:
 | 1.24    | generic type alias, `runtime.AddCleanup`, `weak.Pointer`                                             |
 | 1.25    | spec bỏ khái niệm “core type”, diễn đạt lại luật cho slice/map/chan generic                          |
 | 1.26    | `new(expr)`, constraint tự tham chiếu `type A[T A[T]]`, `errors.AsType[E]`, iterator trong `reflect` |
-| 1.27    | generic method `func (T) M[U any](...)`; struct literal key = field selector (`Embedded.Field`); suy luận hàm generic khi gán/convert sang kiểu hàm |
+| 1.27    | generic method `func (T) M[U any](...)`; struct literal key = field được promote; suy luận hàm generic khi convert / composite literal / gửi channel |
 
 
 ---

@@ -848,7 +848,7 @@ Danh sách 25 keyword không đổi, nhưng **hành vi** của một số keywor
 | 1.24 | `type` | generic type alias |
 | 1.25 | — | không có thay đổi ngôn ngữ; spec bỏ khái niệm "core type" |
 | 1.26 | (predeclared), `interface` | `new(expr)`; generic type tự tham chiếu trong type parameter list |
-| 1.27 | `func`, `type`, `struct` | generic method; struct literal key = field selector; suy luận hàm generic khi gán |
+| 1.27 | `func`, `type`, `struct` | generic method; struct literal key = field được promote; suy luận hàm generic khi convert / literal / gửi channel |
 
 Từ Go 1.26, `go fix` được viết lại trên nền vet analysis framework và trở thành nơi chứa các **modernizer** — chạy `go fix ./...` (hoặc `go fix -diff ./...` để xem patch) để tự động hiện đại hóa code. Xem danh sách bằng `go tool fix help`. Những modernizer liên quan trực tiếp tới keyword trong file này:
 

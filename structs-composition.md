@@ -117,19 +117,26 @@ ptr2 := new(Point)          // *Point, zero value
 - Có thể lấy địa chỉ của literal: `&T{...}` (Go cấp phát trên heap nếu cần).
 - Go 1.26+: `new(expr)` tiện cho optional pointer field — xem [typesystem.md](typesystem.md) §5.
 
-**Go 1.27+:** key của struct literal có thể là **field selector** hợp lệ, không chỉ tên field cấp cao nhất — hữu ích khi embed:
+**Go 1.27+:** key keyed literal được phép là **field được promote** (selector hợp lệ), không chỉ field khai báo trực tiếp trên struct. Key vẫn là **identifier** — `Embedded.Field:` là lỗi `invalid field name`.
 
 ```go
-type Point struct{ X, Y int }
-type Named struct {
-	Point
-	Label string
+type Habitat struct{ Burrow string }
+type Gopher struct {
+	Name string
+	Habitat
 }
 
-n := Named{Point.X: 1, Point.Y: 2, Label: "p"}
-// trước 1.27: Named{Point: Point{X: 1, Y: 2}, Label: "p"}
-// hoặc, nếu không trùng tên: Named{X: 1, Y: 2, Label: "p"}
+g := Gopher{Name: "Gopher", Burrow: "Burrow #42"}
+// trước 1.27: Gopher{Name: "Gopher", Habitat: Habitat{Burrow: "Burrow #42"}}
 ```
+
+Promote xuyên nhiều lớp embed cũng được: `type Mid struct{ Habitat }; type Outer struct{ Mid }` → `Outer{Burrow: "x"}`.
+
+Giới hạn (spec, kiểm chứng go1.27.0):
+
+- Không trộn field promote với field embed bao nó: `Line{Object: obj, name: "diagonal"}` → `cannot specify promoted field name and enclosing embedded field Object`.
+- Không đi qua embed **pointer**: `type P struct{ *Inner }` → `P{X: 1}` lỗi `invalid implicit pointer indirection to reach X`.
+- Language version: với `go` directive < 1.27, toolchain 1.27 báo `use of promoted field Habitat.Burrow in struct literal ... requires go1.27 or later`.
 
 Cập nhật field:
 
@@ -179,6 +186,7 @@ type C struct{ B }
 
 c := C{}
 c.V = 42 // promote qua B → A
+// Go 1.27+: C{V: 42} hợp lệ trong keyed literal — §4
 ```
 
 **Embedding vs composition tường minh:**
@@ -465,7 +473,7 @@ Chi tiết receiver xem thêm [pointers.md](pointers.md).
 
 ## 13. Padding, layout & `structs.HostLayout`
 
-Compiler chèn **padding** để field căn theo alignment. Đo bằng `unsafe.Sizeof` / `Offsetof` (amd64, go1.26.5):
+Compiler chèn **padding** để field căn theo alignment. Đo bằng `unsafe.Sizeof` / `Offsetof` (amd64, go1.27.0):
 
 ```go
 type PadBad struct {

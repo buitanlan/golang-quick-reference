@@ -192,7 +192,7 @@ var _ Getter[int] = Box[int]{} // OK — Get không generic
 
 - Interface method **không** được generic.
 - Generic method không implement interface method.
-- Chi tiết và lỗi `method must have no type parameters` trên lang < 1.27: [generics.md](generics.md) §9.
+- Chi tiết và thông báo lỗi trên lang < 1.27: [generics.md](generics.md) §9.
 
 ---
 

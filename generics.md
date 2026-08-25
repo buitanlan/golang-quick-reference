@@ -50,7 +50,7 @@ func Min[T cmp.Ordered](a, b T) T {
 - Tham số kiểu trong `[...]` trước danh sách tham số giá trị.
 - Constraint giới hạn type set cho phép toán tử / method.
 - Instantiation: `Min[int](1, 2)` hoặc suy luận `Min(1, 2)`.
-- Go **1.25** không thêm cú pháp ngôn ngữ mới; spec bỏ khái niệm “core type” (mục 6). Go **1.26** thêm constraint tự tham chiếu (mục 11). Go **1.27** cho phép generic method và suy luận hàm generic khi gán vào kiểu hàm (mục 9–10).
+- Go **1.25** không thêm cú pháp ngôn ngữ mới; spec bỏ khái niệm “core type” (mục 6). Go **1.26** thêm constraint tự tham chiếu (mục 11). Go **1.27** cho phép generic method và suy luận hàm generic khi convert / composite literal / gửi channel (mục 9–10).
 
 ---
 
@@ -373,9 +373,13 @@ st.Push(1)
 ss := st.Convert(strconv.Itoa) // U = string suy từ f
 ```
 
-Trên toolchain cũ hơn (`go` directive / `-lang` < 1.27):
+Trên language version < 1.27 (dòng `go` trong `go.mod` / `-lang`):
 
 ```text
+# toolchain 1.27+
+generic method requires go1.27 or later (-lang was set to go1.26; check go.mod)
+
+# toolchain 1.26
 method must have no type parameters
 ```
 
@@ -418,17 +422,19 @@ Stack[int]{}        // type cần chỉ rõ khi không có đối số suy ra
 - Chỉ rõ khi mơ hồ: `Min[int64](a, b)`.
 - Constraint quá hẹp/rộng ảnh hưởng inference.
 
-**Go 1.27+:** suy luận hàm generic khi **gán hoặc convert** sang kiểu hàm khớp — không cần đối số gọi:
+**Go 1.27+:** suy luận hàm generic được **mở rộng** sang mọi ngữ cảnh gán kiểu hàm — convert, composite literal, gửi channel — không cần đối số gọi:
 
 ```go
 func ident[T any](v T) T { return v }
 
-var f func(int) int = ident // T = int, từ kiểu đích
-g := ident[string]          // vẫn chỉ rõ khi chưa có kiểu đích
-_ = (func(int) int)(ident)
+var f func(int) int = ident // đã được từ trước 1.27 (gán biến / return)
+_ = (func(int) int)(ident)  // 1.27: convert
+_ = []func(int) int{ident}  // 1.27: composite literal
+ch := make(chan func(int) int, 1)
+ch <- ident                 // 1.27: gửi channel
 ```
 
-Trước 1.27, `var f func(int) int = ident` thường lỗi vì không suy được `T` ngoài ngữ cảnh gọi.
+Trên toolchain 1.26, convert / literal / gửi channel báo `cannot use generic function ident without instantiation`. Gán biến `var f func(int) int = ident` đã biên dịch được từ trước.
 
 ---
 
@@ -588,6 +594,6 @@ Hoặc alias (1.24+) nếu không cần method: `type Set[T comparable] = map[T]
 | Self-ref constraint | Go 1.26+ `type C[T C[T]] interface{...}` |
 | Method thêm `[U]` | Go 1.27+ `func (T) M[U any](...)` — **không** implement interface |
 | Core type | bỏ khỏi spec từ 1.25 — nghĩ bằng type set |
-| Inference | từ arguments; 1.27+ cả khi gán vào kiểu hàm |
+| Inference | từ arguments; gán biến đã có; 1.27+ thêm convert / composite literal / gửi channel |
 | Stdlib | `slices`, `maps`, `unique`, `weak`, `errors.AsType`; 1.27 `rand/v2.Rand.N` |
 | Tránh | generic sớm / một-shot / trùng stdlib |

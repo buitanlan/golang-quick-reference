@@ -286,7 +286,7 @@ func caseC() (err error) {
 }
 ```
 
-Output thật của `go build` (go1.26.5):
+Output thật của `go build` (go1.27.0):
 
 ```text
 ./shadow.go:41:3: result parameter err not in scope at return
@@ -465,7 +465,7 @@ defer fmt.Println("second") // chạy trước
 Từ **Go 1.14**, compiler dùng *open-coded defer*: theo release notes, `defer` “incur almost zero overhead compared to calling the deferred function directly”. Nghĩa là **không** cần tránh `defer` vì performance nữa. Hai ngoại lệ:
 
 - `defer` trong vòng lặp: mỗi lần lặp đẩy thêm một entry, chạy dồn ở cuối hàm (§5.4) — vấn đề đúng đắn, không phải vi mô.
-- `defer` làm hàm **không inline được**. Output thật của `go build -gcflags='-m -m'` (go1.26.5):
+- `defer` làm hàm **không inline được**. Output thật của `go build -gcflags='-m -m'` (go1.27.0):
 
 ```text
 ./noinl.go:5:6:  cannot inline withDefer: unhandled op DEFER
@@ -599,7 +599,7 @@ if f == nil { // OK
 ```
 
 - Đây cũng là lý do struct chứa field kiểu hàm mất tính comparable — xem [structs-composition.md](structs-composition.md).
-- Muốn “so sánh” handler cho mục đích debug: dùng `reflect.ValueOf(f).Pointer()` (chỉ để log, hai closure khác nhau của cùng một literal có thể cùng pointer).
+- Muốn “so sánh” handler cho mục đích debug: dùng `reflect.ValueOf(f).Pointer()` (chỉ để log). Go **1.27** đặt tên closure đơn giản hơn và có thể **gộp** nhiều instance cùng literal thành một đoạn code — hai closure khác captured data dễ cùng code pointer hơn trước. Đừng dựa vào so pointer.
 
 ### 6.2 Adapter: biến hàm thành interface
 
@@ -657,7 +657,7 @@ fmt.Println(c()) // 1
 fmt.Println(c()) // 2
 ```
 
-Closure capture **biến**, không phải giá trị: `n` sống lâu hơn `makeCounter` nên compiler đẩy nó lên heap. Output thật `go build -gcflags='-m'` (go1.26.5):
+Closure capture **biến**, không phải giá trị: `n` sống lâu hơn `makeCounter` nên compiler đẩy nó lên heap. Output thật `go build -gcflags='-m'` (go1.27.0):
 
 ```text
 ./main.go:30:2: moved to heap: n
@@ -1022,7 +1022,7 @@ nums := Map([]int{1, 2, 3}, strconv.Itoa) // T, U suy từ đối số
 
 - Type param viết trong `[...]` **trước** danh sách đối số giá trị.
 - Inference từ argument; ít khi suy được chỉ từ kiểu trả về → `Parse[int](s)` khi mơ hồ.
-- **Go 1.27+:** gán/convert hàm generic sang kiểu hàm khớp cũng suy được type param: `var f func(int) int = ident`.
+- **Go 1.27+:** convert / composite literal / gửi channel cũng suy được type param của hàm generic (`(func(int) int)(ident)`, `[]F{ident}`, `ch <- ident`). Gán biến `var f func(int) int = ident` đã được từ trước.
 - Constraint quyết định toán tử/method được dùng trong thân (`cmp.Ordered`, `comparable`, type set).
 - **Không** type-switch trực tiếp trên `T` — `switch any(v).(type)`.
 - Method generic (1.27): [generics.md](generics.md) §9, [methods-interfaces.md](methods-interfaces.md) §3.3.
@@ -1067,7 +1067,7 @@ Compiler quyết định inline và stack vs heap. Không đoán — đo:
 go build -gcflags="-m -m" .
 ```
 
-Output thật (go1.26.5) với closure capture:
+Output thật (go1.27.0) với closure capture:
 
 ```text
 ./main.go:30:2: moved to heap: n
@@ -1125,7 +1125,7 @@ func LoadJSON[T any](path string) (T, error) {
 | 1.23 | `range` over `iter.Seq` / func |
 | 1.24 | generic type alias; `runtime.AddCleanup` |
 | 1.26 | `new(expr)`; constraint tự tham chiếu |
-| 1.27 | generic method; suy luận hàm generic khi gán vào kiểu hàm |
+| 1.27 | generic method; suy luận hàm generic khi convert / composite literal / gửi channel |
 
 ---
 

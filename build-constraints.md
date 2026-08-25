@@ -452,7 +452,7 @@ package p
 // file này dùng cú pháp/API cần language ≥ 1.26
 ```
 
-Ví dụ thực tế (`go 1.22` trong `go.mod`, toolchain `go1.26.5`, host Windows):
+Ví dụ thực tế (`go 1.22` trong `go.mod`, toolchain `go1.27.0`, host Windows):
 
 ```bash
 go list -f 'GoFiles={{.GoFiles}} Ignored={{.IgnoredGoFiles}}' .
@@ -463,7 +463,7 @@ go list -f 'GoFiles={{.GoFiles}} Ignored={{.IgnoredGoFiles}}' .
 
 - Tag `go1.x` **không** bị “tắt” chỉ vì dòng `go` trong `go.mod` thấp hơn — miễn toolchain đang chạy thỏa `go1.x`.
 - Modernizer `go fix` (1.26) cũng chỉ đề xuất fix tính năng mới trên file đã yêu cầu đủ version — [packages-modules.md](packages-modules.md) §16.
-- Không có tag riêng cho patch (`go1.26.5`); chỉ major.minor dạng `go1.26`.
+- Không có tag riêng cho patch (`go1.27.0`); chỉ major.minor dạng `go1.27`.
 
 ---
 

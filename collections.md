@@ -2,7 +2,7 @@
 
 Ba kiểu tập hợp cốt lõi: **array** (cố định), **slice** (view động trên array), **map** (hash table). Slice và map là công cụ hàng ngày; hiểu header (ptr/len/cap) tránh bug chia sẻ bộ nhớ và reallocation.
 
-> Tài liệu nhắm **Go 1.27**; số liệu đo trên `go1.26.5 windows/amd64` (tăng cap `append`, v.v.). Mọi hàm `slices`/`maps` đều ghi version xuất hiện.
+> Tài liệu nhắm **Go 1.27**; số liệu đo trên `go1.27.0 windows/amd64` (tăng cap `append` heap, randomize map). Mọi hàm `slices`/`maps` đều ghi version xuất hiện.
 
 ---
 
@@ -137,7 +137,7 @@ s = append(s, 3) // có thể đổi ptr → phải gán lại s
 
 ### 3.1 Chiến lược tăng cap của `append`
 
-Runtime (`runtime.nextslicecap` trong go1.26.5) quyết định cap mới theo `newLen` và `oldCap`:
+Runtime (`runtime.nextslicecap` trong go1.27.0) quyết định cap mới theo `newLen` và `oldCap`:
 
 1. `newLen > 2*oldCap` → dùng luôn `newLen` (append nhiều phần tử một lần thì không over-allocate).
 2. Ngược lại, `oldCap < 256` → **gấp đôi**.
@@ -145,16 +145,16 @@ Runtime (`runtime.nextslicecap` trong go1.26.5) quyết định cap mới theo `
 
 Sau đó số byte được **làm tròn lên size class** của allocator, nên cap thực tế thường không phải luỹ thừa 2.
 
-Đo thật với `[]int` (escape ra heap), in `cap` mỗi lần nó đổi:
+Đo thật với `[]int` đã escape (bắt đầu `make([]int, 0, 1)`), in `cap` mỗi lần nó đổi:
 
 ```text
 1 2 4 8 16 32 64 128 256 512 848 1280 1792 2560 3408 5120
 ```
 
 - Tới 512 là gấp đôi; từ đó `512 → 832` theo công thức 1.25×, làm tròn size class thành **848**.
-- Với `[]string` (16 byte/phần tử) dãy đo được là `2 4 8 16 32 71 143 303` — các số lẻ chính là hệ quả của việc làm tròn size class, **đừng** hard-code chúng.
+- Với `[]string` (16 byte/phần tử) dãy đo được là `1 2 4 8 16 32 71 143 303 591` — các số lẻ chính là hệ quả của việc làm tròn size class, **đừng** hard-code chúng.
 
-Một chi tiết dễ gây bối rối khi benchmark: nếu slice **không escape**, compiler cấp phát buffer trên stack và đo được cap lớn hơn mong đợi.
+Một chi tiết dễ gây bối rối khi benchmark: nếu slice **không escape**, hoặc compiler chứng minh backing store **exclusive** rồi mới `move2heap` lúc return, `append` có thể dùng buffer stack. Đo được dãy kiểu `1 2 3 4 8 …` — đó **không** phải `nextslicecap` trên heap. Buộc heap: `s := make([]T, 0, 1)` rồi append, hoặc `//go:noinline` + gán ra biến package-level.
 
 ```go
 func local() {
@@ -328,7 +328,7 @@ clear(m)             // cách duy nhất để dọn
 
 ### 6.1 Bên trong map: Swiss table (Go 1.24+)
 
-Từ Go 1.24 map builtin được hiện thực lại theo **Swiss table** (thiết kế của Abseil) — trong go1.26.5 nằm ở `internal/runtime/maps`. Trước đó là bucket chaining với 8 slot/bucket + overflow bucket.
+Từ Go 1.24 map builtin được hiện thực lại theo **Swiss table** (thiết kế của Abseil) — trong go1.27.0 nằm ở `internal/runtime/maps`. Trước đó là bucket chaining với 8 slot/bucket + overflow bucket.
 
 Điều **không** đổi (và bạn được phép dựa vào):
 
@@ -432,7 +432,7 @@ Spec: *“The iteration order over maps is not specified and is not guaranteed t
 for k := range m { ... } // thứ tự không ổn định giữa các lần duyệt
 ```
 
-**Randomize là điểm bắt đầu, không phải shuffle.** Đo trên go1.26.5 (1000 lần `range`):
+**Randomize là điểm bắt đầu, không phải shuffle.** Đo trên go1.27.0 (1000 lần `range`):
 
 | Map | Số thứ tự phân biệt quan sát được |
 |---|---|
